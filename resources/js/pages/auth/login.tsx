@@ -10,11 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AuthLayout from '@/layouts/auth-layout';
 
-interface LoginForm {
-    email: string;
-    password: string;
-    remember: boolean;
-}
+
 
 interface LoginProps {
     status?: string;
@@ -22,8 +18,8 @@ interface LoginProps {
 }
 
 export default function Login({ status, canResetPassword }: LoginProps) {
-    const { data, setData, post, processing, errors, reset } = useForm<LoginForm>({
-        email: '',
+    const { data, setData, post, processing, errors, reset } = useForm({
+        login: '',
         password: '',
         remember: false,
     });
@@ -42,19 +38,25 @@ export default function Login({ status, canResetPassword }: LoginProps) {
             <form className="flex flex-col gap-6" onSubmit={submit}>
                 <div className="grid gap-6">
                     <div className="grid gap-2">
-                        <Label htmlFor="email">Email address</Label>
+                        <Label htmlFor="login">
+                            Employee ID, username, or email
+                        </Label>
+
                         <Input
-                            id="email"
-                            type="email"
+                            id="login"
+                            type="text"
+                            name="login"
                             required
                             autoFocus
-                            tabIndex={1}
-                            autoComplete="email"
-                            value={data.email}
-                            onChange={(e) => setData('email', e.target.value)}
-                            placeholder="email@example.com"
+                            autoComplete="username"
+                            value={data.login}
+                            onChange={(event) =>
+                                setData('login', event.target.value)
+                            }
+                            placeholder="Enter employee ID, username, or email"
                         />
-                        <InputError message={errors.email} />
+
+                        <InputError message={errors.login} />
                     </div>
 
                     <div className="grid gap-2">
@@ -90,12 +92,6 @@ export default function Login({ status, canResetPassword }: LoginProps) {
                     </Button>
                 </div>
 
-                <div className="text-muted-foreground text-center text-sm">
-                    Don't have an account?{' '}
-                    <TextLink href={route('register')} tabIndex={5}>
-                        Sign up
-                    </TextLink>
-                </div>
             </form>
 
             {status && <div className="mb-4 text-center text-sm font-medium text-green-600">{status}</div>}
