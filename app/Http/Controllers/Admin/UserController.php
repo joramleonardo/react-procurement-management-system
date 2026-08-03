@@ -13,9 +13,16 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
+use App\Services\AuditLogService;
 
 class UserController extends Controller
 {
+
+    public function __construct(
+        private readonly AuditLogService $auditLogService
+    ) {
+    }
+
     /**
      * Display the users management page.
      */
@@ -159,6 +166,27 @@ class UserController extends Controller
             $user->syncRoles([
                 $validated['role'],
             ]);
+
+            $this->auditLogService->record(
+                module: 'user-management',
+                action: 'user-created',
+                subject: $user,
+                description:
+                    "Created user account for {$user->name}.",
+                newValues: [
+                    'employee_id' => $user->employee_id,
+                    'username' => $user->username,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'office_id' => $user->office_id,
+                    'position_title' => $user->position_title,
+                    'status' => $user->status,
+                    'role' => $validated['role'],
+                ],
+                request: $request
+            );
+
+
         });
 
         return redirect()
@@ -317,6 +345,19 @@ class UserController extends Controller
         $validated = $request->validated();
         $currentUser = $request->user();
 
+        $user->loadMissing('roles:id,name');
+
+        $oldValues = [
+            'employee_id' => $user->employee_id,
+            'username' => $user->username,
+            'name' => $user->name,
+            'email' => $user->email,
+            'office_id' => $user->office_id,
+            'position_title' => $user->position_title,
+            'status' => $user->status,
+            'role' => $user->roles->first()?->name,
+        ];
+
         /*
         * Prevent users from disabling or locking their own account.
         */
@@ -373,7 +414,8 @@ class UserController extends Controller
         DB::transaction(function () use (
             $validated,
             $user,
-            $currentUser
+            $currentUser,
+            $oldValues
         ): void {
             $fullName = collect([
                 $validated['first_name'],
@@ -402,10 +444,34 @@ class UserController extends Controller
             $user->syncRoles([
                 $validated['role'],
             ]);
+
+            $this->auditLogService->record(
+                module: 'user-management',
+                action: 'user-updated',
+                subject: $user,
+                description:
+                    "Updated user account for {$user->name}.",
+                oldValues: $oldValues,
+                newValues: [
+                    'employee_id' => $validated['employee_id'],
+                    'username' => $validated['username'],
+                    'name' => $fullName,
+                    'email' => $validated['email'],
+                    'office_id' =>
+                        $validated['office_id'] ?: null,
+                    'position_title' =>
+                        $validated['position_title'] ?: null,
+                    'status' => $validated['status'],
+                    'role' => $validated['role'],
+                ],
+                request: $request
+            );
+
         });
 
         return redirect()
             ->route('admin.users.show', $user)
             ->with('success', 'User account updated successfully.');
     }
+
 }

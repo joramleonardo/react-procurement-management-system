@@ -90,4 +90,18 @@ class User extends Authenticatable
                 && $this->locked_until->isFuture()
             );
     }
+
+    public function loginLogs(): HasMany
+    {
+        return $this->hasMany(LoginLog::class);
+    }
+
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(
+            AuditLog::class,
+            'actor_user_id'
+        );
+    }
+
 }

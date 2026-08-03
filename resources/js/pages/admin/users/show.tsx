@@ -30,10 +30,27 @@ interface UserRecord {
     password_changed_at: string | null;
     created_at: string | null;
     updated_at: string | null;
+    is_locked: boolean;
 }
 
 interface ShowUserProps {
     user: UserRecord;
+    can: UserPermissions;
+    flash: FlashMessages;
+}
+
+interface UserPermissions {
+    update: boolean;
+    reset_password: boolean;
+    activate: boolean;
+    deactivate: boolean;
+    unlock: boolean;
+    is_self: boolean;
+}
+
+interface FlashMessages {
+    success: string | null;
+    error: string | null;
 }
 
 function formatRole(role: string): string {
@@ -70,7 +87,7 @@ function statusClasses(status: string): string {
 }
 
 export default function ShowUser({
-    user,
+    user, can, flash,
 }: ShowUserProps) {
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -87,9 +104,36 @@ export default function ShowUser({
         },
     ];
 
+    const displayedStatus = user.is_locked
+    ? 'locked'
+    : user.status;
+
+    function runAccountAction(
+        url: string,
+        confirmationMessage: string,
+    ) {
+        if (!window.confirm(confirmationMessage)) {
+            return;
+        }
+
+        router.patch(
+            url,
+            {},
+            {
+                preserveScroll: true,
+            },
+        );
+    }
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={user.name} />
+
+                {flash.success && (
+                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
+                        {flash.success}
+                    </div>
+                )}
 
             <div className="flex h-full flex-1 flex-col gap-5 rounded-xl p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -101,10 +145,10 @@ export default function ShowUser({
 
                             <span
                                 className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${statusClasses(
-                                    user.status,
+                                    displayedStatus,
                                 )}`}
                             >
-                                {user.status}
+                                {displayedStatus}
                             </span>
                         </div>
 
@@ -296,6 +340,87 @@ export default function ShowUser({
                                 </dd>
                             </div>
                         </dl>
+                    </section>
+
+                    <section className="rounded-xl border bg-background p-5 lg:col-span-2">
+                        <div className="mb-5">
+                            <h2 className="text-lg font-semibold">
+                                Account Controls
+                            </h2>
+
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                Manage the user’s password and account access.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            {can.reset_password && !can.is_self && (
+                                <Button asChild variant="outline">
+                                    <Link
+                                        href={`/admin/users/${user.id}/reset-password`}
+                                    >
+                                        Reset Password
+                                    </Link>
+                                </Button>
+                            )}
+
+                            {can.activate &&
+                                !user.is_locked &&
+                                ['pending', 'inactive'].includes(
+                                    user.status,
+                                ) && (
+                                    <Button
+                                        type="button"
+                                        onClick={() =>
+                                            runAccountAction(
+                                                `/admin/users/${user.id}/activate`,
+                                                `Activate ${user.name}'s account?`,
+                                            )
+                                        }
+                                    >
+                                        Activate Account
+                                    </Button>
+                                )}
+
+                            {can.unlock && user.is_locked && (
+                                <Button
+                                    type="button"
+                                    onClick={() =>
+                                        runAccountAction(
+                                            `/admin/users/${user.id}/unlock`,
+                                            `Unlock ${user.name}'s account?`,
+                                        )
+                                    }
+                                >
+                                    Unlock Account
+                                </Button>
+                            )}
+
+                            {can.deactivate &&
+                                !can.is_self &&
+                                user.status === 'active' &&
+                                !user.is_locked && (
+                                    <Button
+                                        type="button"
+                                        variant="destructive"
+                                        onClick={() =>
+                                            runAccountAction(
+                                                `/admin/users/${user.id}/deactivate`,
+                                                `Deactivate ${user.name}'s account? The user will lose access to the system.`,
+                                            )
+                                        }
+                                    >
+                                        Deactivate Account
+                                    </Button>
+                                )}
+                        </div>
+
+                        {can.is_self && (
+                            <p className="mt-4 text-sm text-muted-foreground">
+                                You cannot deactivate or administratively reset
+                                your own account from this page.
+                            </p>
+                        )}
                     </section>
 
                     <section className="rounded-xl border bg-background p-5 lg:col-span-2">

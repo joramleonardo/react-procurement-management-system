@@ -86,6 +86,12 @@ class LoginRequest extends FormRequest
             && ! $user->isLocked();
 
         if (! $passwordIsValid || ! $accountIsAllowed) {
+            app(LoginLogService::class)->failed(
+                user: $user,
+                request: $this,
+                identifier: $login
+            );
+
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -118,6 +124,11 @@ class LoginRequest extends FormRequest
         }
 
         event(new Lockout($this));
+
+        app(LoginLogService::class)->rateLimited(
+            request: $this,
+            identifier: (string) $this->input('login')
+        );
 
         $seconds = RateLimiter::availableIn(
             $this->throttleKey()
