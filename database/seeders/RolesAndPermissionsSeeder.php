@@ -49,6 +49,20 @@ class RolesAndPermissionsSeeder extends Seeder
             'audit-logs.view',
             'audit-logs.export',
             'login-logs.view',
+
+            // PPMP Coordinator
+            'ppmps.view-own',
+            'ppmps.create',
+            'ppmps.update-own',
+            'ppmps.submit',
+            'ppmps.resubmit',
+
+            // GSPS Administration
+            'ppmps.view-all',
+            'ppmps.return',
+            'ppmps.approve',
+            'ppmps.upload-approved-copy',
+
         ];
 
         foreach ($permissions as $permission) {
@@ -81,6 +95,26 @@ class RolesAndPermissionsSeeder extends Seeder
                 'audit-logs.export',
                 'login-logs.view',
             ],
+
+            'ppmp-coordinator' => [
+                ...$basicPermissions,
+
+                'ppmps.view-own',
+                'ppmps.create',
+                'ppmps.update-own',
+                'ppmps.submit',
+                'ppmps.resubmit',
+            ],
+
+            'gsps-administrator' => [
+                ...$basicPermissions,
+
+                'ppmps.view-all',
+                'ppmps.return',
+                'ppmps.approve',
+                'ppmps.upload-approved-copy',
+            ],
+
         ];
 
         foreach ($rolePermissions as $roleName => $assignedPermissions) {

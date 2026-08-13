@@ -4,12 +4,15 @@ use App\Http\Controllers\Admin\UserController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\Admin\UserAccountController;
+use App\Http\Controllers\PpmpController;
+use App\Http\Controllers\PpmpAttachmentController;
 
 Route::get('/', function () {
     return Inertia::render('welcome');
 })->name('home');
 
 Route::middleware(['auth'])->group(function () {
+
     Route::get('dashboard', function () {
         return Inertia::render('dashboard');
     })->name('dashboard');
@@ -87,6 +90,71 @@ Route::middleware(['auth'])->group(function () {
 
 
         });
+
+    Route::get(
+        'ppmps',
+        [PpmpController::class, 'index']
+    )->name('ppmps.index');
+
+    Route::get(
+        'ppmps/create',
+        [PpmpController::class, 'create']
+    )
+        ->middleware('permission:ppmps.create')
+        ->name('ppmps.create');
+
+    Route::post(
+        'ppmps',
+        [PpmpController::class, 'store']
+    )
+        ->middleware('permission:ppmps.create')
+        ->name('ppmps.store');
+
+    Route::get(
+        'ppmps/{ppmp}',
+        [PpmpController::class, 'show']
+    )
+        ->whereNumber('ppmp')
+        ->name('ppmps.show');
+
+    Route::get(
+        'ppmps/{ppmp}/edit',
+        [PpmpController::class, 'edit']
+    )
+        ->whereNumber('ppmp')
+        ->name('ppmps.edit');
+
+    Route::put(
+        'ppmps/{ppmp}',
+        [PpmpController::class, 'update']
+    )
+        ->whereNumber('ppmp')
+        ->name('ppmps.update');
+
+    Route::post(
+        'ppmps/{ppmp}/items/{item}/attachments',
+        [PpmpAttachmentController::class, 'store']
+    )
+        ->whereNumber('ppmp')
+        ->whereNumber('item')
+        ->name('ppmps.attachments.store');
+
+    Route::get(
+        'ppmps/{ppmp}/attachments/{attachment}/download',
+        [PpmpAttachmentController::class, 'download']
+    )
+        ->whereNumber('ppmp')
+        ->whereNumber('attachment')
+        ->name('ppmps.attachments.download');
+
+    Route::delete(
+        'ppmps/{ppmp}/attachments/{attachment}',
+        [PpmpAttachmentController::class, 'destroy']
+    )
+        ->whereNumber('ppmp')
+        ->whereNumber('attachment')
+        ->name('ppmps.attachments.destroy');
+
 });
 
 require __DIR__.'/settings.php';

@@ -5,10 +5,12 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
 import {
+    ClipboardList,
     BookOpen,
     Folder,
     LayoutGrid,
     UsersRound,
+
 } from 'lucide-react';
 import AppLogo from './app-logo';
 
@@ -22,6 +24,11 @@ const mainNavItems: NavItem[] = [
         title: 'User Management',
         url: '/admin/users',
         icon: UsersRound,
+    },
+    {
+        title: 'PPMP',
+        url: '/ppmps',
+        icon: ClipboardList,
     },
 ];
 

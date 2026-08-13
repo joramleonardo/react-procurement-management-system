@@ -11,12 +11,20 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\AuditLogService;
 
 class UserAccountController extends Controller
 {
+
     /**
      * Display the administrative password-reset page.
      */
+
+    public function __construct(
+        private readonly AuditLogService $auditLogService
+    ) {
+    }
+
     public function editPassword(
         Request $request,
         User $user
@@ -70,6 +78,18 @@ class UserAccountController extends Controller
                 'updated_by' => $request->user()->id,
             ])->save();
 
+            $this->auditLogService->record(
+                module: 'user-management',
+                action: 'password-reset',
+                subject: $user,
+                description:
+                    "Reset the password for {$user->name}.",
+                newValues: [
+                    'must_change_password' => true,
+                ],
+                request: $request
+            );
+
             $this->revokeDatabaseSessions($user);
         });
 
@@ -88,11 +108,29 @@ class UserAccountController extends Controller
         Request $request,
         User $user
     ): RedirectResponse {
+        // Save the status before changing it for the audit log.
+        $oldStatus = $user->status;
+
         $user->forceFill([
             'status' => 'active',
             'locked_until' => null,
             'updated_by' => $request->user()->id,
         ])->save();
+
+        $this->auditLogService->record(
+            module: 'user-management',
+            action: 'account-activated',
+            subject: $user,
+            description:
+                "Activated the account of {$user->name}.",
+            oldValues: [
+                'status' => $oldStatus,
+            ],
+            newValues: [
+                'status' => 'active',
+            ],
+            request: $request
+        );
 
         return back()->with(
             'success',
@@ -150,11 +188,32 @@ class UserAccountController extends Controller
         Request $request,
         User $user
     ): RedirectResponse {
+
+        $oldStatus = $user->status;
+        $oldLockedUntil = $user->locked_until;
+
         $user->forceFill([
             'status' => 'active',
             'locked_until' => null,
             'updated_by' => $request->user()->id,
         ])->save();
+
+        $this->auditLogService->record(
+            module: 'user-management',
+            action: 'account-unlocked',
+            subject: $user,
+            description:
+                "Unlocked the account of {$user->name}.",
+            oldValues: [
+                'status' => $oldStatus,
+                'locked_until' => $oldLockedUntil,
+            ],
+            newValues: [
+                'status' => 'active',
+                'locked_until' => null,
+            ],
+            request: $request
+        );
 
         return back()->with(
             'success',

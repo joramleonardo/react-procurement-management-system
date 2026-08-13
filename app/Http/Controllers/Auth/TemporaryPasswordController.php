@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\AuditLogService;
 
 class TemporaryPasswordController extends Controller
 {
@@ -39,6 +40,21 @@ class TemporaryPasswordController extends Controller
             'password_changed_at' => now(),
             'updated_by' => $user->id,
         ])->save();
+
+        $auditLogService->record(
+            module: 'authentication',
+            action: 'password-changed',
+            subject: $user,
+            description:
+                "{$user->name} replaced their temporary password.",
+            newValues: [
+                'must_change_password' => false,
+                'password_changed_at' =>
+                    $user->password_changed_at,
+            ],
+            request: $request,
+            actor: $user
+        );
 
         /*
          * Generate a new session identifier after the
