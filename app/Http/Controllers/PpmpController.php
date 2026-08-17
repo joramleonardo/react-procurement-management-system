@@ -586,10 +586,31 @@ class PpmpController extends Controller
 
         $ppmp->load([
             'office:id,code,name',
+
             'coordinator:id,name,position_title',
+
             'items.attachments',
+
+            'attachments',
+
+            'approver:id,name',
+
             'statusHistories.actionBy:id,name',
         ]);
+
+        $approvedCopy = $ppmp
+            ->attachments
+            ->firstWhere(
+                'document_type',
+                'approved_ppmp'
+            );
+
+        $user = $request->user();
+
+        $isCoordinatorOwner =
+            $user->hasRole('ppmp-coordinator')
+            && $user->office_id
+                === $ppmp->office_id;
 
         return Inertia::render('ppmps/show', [
             'ppmp' => [
@@ -690,19 +711,105 @@ class PpmpController extends Controller
                                         'M d, Y h:i A'
                                     ),
                         ]),
+
+                'remarks' => $ppmp->remarks,
+
+                'submitted_at' =>
+                    $ppmp->submitted_at
+                        ?->format(
+                            'M d, Y h:i A'
+                        ),
+
+                'returned_at' =>
+                    $ppmp->returned_at
+                        ?->format(
+                            'M d, Y h:i A'
+                        ),
+
+                'approved_at' =>
+                    $ppmp->approved_at
+                        ?->format(
+                            'M d, Y h:i A'
+                        ),
+
+                'approver' => $ppmp->approver
+                    ? [
+                        'id' =>
+                            $ppmp->approver->id,
+
+                        'name' =>
+                            $ppmp->approver->name,
+                    ]
+                    : null,
+
+                'approved_copy' => $approvedCopy
+                    ? [
+                        'id' =>
+                            $approvedCopy->id,
+
+                        'original_name' =>
+                            $approvedCopy
+                                ->original_name,
+
+                        'file_size' =>
+                            $approvedCopy
+                                ->file_size,
+                    ]
+                    : null,
+
             ],
 
             'can' => [
                 'edit' =>
-                    $request->user()
-                        ->hasRole(
-                            'ppmp-coordinator'
-                        )
-                    && $request->user()
-                        ->office_id
-                        === $ppmp->office_id
+                    $isCoordinatorOwner
+                    && $user->can(
+                        'ppmps.update-own'
+                    )
                     && $ppmp->isEditable(),
+
+                'submit' =>
+                    $isCoordinatorOwner
+                    && $user->can(
+                        'ppmps.submit'
+                    )
+                    && $ppmp->status
+                        === 'draft',
+
+                'resubmit' =>
+                    $isCoordinatorOwner
+                    && $user->can(
+                        'ppmps.resubmit'
+                    )
+                    && $ppmp->status
+                        === 'returned_for_revision',
+
+                'return_for_revision' =>
+                    $user->can(
+                        'ppmps.return'
+                    )
+                    && $ppmp->status
+                        === 'submitted',
+
+                'approve' =>
+                    $user->can(
+                        'ppmps.approve'
+                    )
+                    && $user->can(
+                        'ppmps.upload-approved-copy'
+                    )
+                    && $ppmp->status
+                        === 'submitted',
+
+                /*
+                * We'll connect this to the PR
+                * module later.
+                */
+                'create_pr' =>
+                    $isCoordinatorOwner
+                    && $ppmp->status
+                        === 'approved',
             ],
+
 
             'flash' => [
                 'success' =>

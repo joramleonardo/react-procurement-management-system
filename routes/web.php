@@ -6,6 +6,7 @@ use Inertia\Inertia;
 use App\Http\Controllers\Admin\UserAccountController;
 use App\Http\Controllers\PpmpController;
 use App\Http\Controllers\PpmpAttachmentController;
+use App\Http\Controllers\PpmpWorkflowController;
 
 Route::get('/', function () {
     return Inertia::render('welcome');
@@ -154,6 +155,42 @@ Route::middleware(['auth'])->group(function () {
         ->whereNumber('ppmp')
         ->whereNumber('attachment')
         ->name('ppmps.attachments.destroy');
+
+    Route::patch(
+        'ppmps/{ppmp}/submit',
+        [PpmpWorkflowController::class, 'submit']
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:ppmps.submit')
+        ->name('ppmps.submit');
+
+    Route::patch(
+        'ppmps/{ppmp}/resubmit',
+        [PpmpWorkflowController::class, 'resubmit']
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:ppmps.resubmit')
+        ->name('ppmps.resubmit');
+
+    Route::patch(
+        'ppmps/{ppmp}/return-for-revision',
+        [
+            PpmpWorkflowController::class,
+            'returnForRevision',
+        ]
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:ppmps.return')
+        ->name('ppmps.return-for-revision');
+
+    Route::post(
+        'ppmps/{ppmp}/approve',
+        [PpmpWorkflowController::class, 'approve']
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:ppmps.approve')
+        ->name('ppmps.approve');
+
 
 });
 
