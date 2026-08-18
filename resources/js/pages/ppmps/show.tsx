@@ -1,15 +1,8 @@
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import {
-    Head,
-    Link,
-    router,
-} from '@inertiajs/react';
-import {
-    FormEvent,
-    useState,
-} from 'react';
+import { Head, Link, router } from '@inertiajs/react';
+import { FormEvent, useState } from 'react';
 
 interface Office {
     id: number;
@@ -55,6 +48,11 @@ interface StatusHistory {
     acted_at: string | null;
 }
 
+interface Approver {
+    id: number;
+    name: string;
+}
+
 interface Ppmp {
     id: number;
     ppmp_no: string;
@@ -91,6 +89,11 @@ interface ShowProps {
 
     can: {
         edit: boolean;
+        submit: boolean;
+        resubmit: boolean;
+        return_for_revision: boolean;
+        approve: boolean;
+        create_pr: boolean;
     };
 
     flash: {
@@ -98,14 +101,13 @@ interface ShowProps {
     };
 }
 
-interface Approver {
-    id: number;
-    name: string;
+interface ItemAttachmentsProps {
+    ppmpId: number;
+    item: PpmpItem;
+    canEdit: boolean;
 }
 
-function formatCurrency(
-    value: string | number,
-): string {
+function formatCurrency(value: string | number): string {
     return new Intl.NumberFormat('en-PH', {
         style: 'currency',
         currency: 'PHP',
@@ -114,9 +116,7 @@ function formatCurrency(
     }).format(Number(value));
 }
 
-function formatMonth(
-    value: string | null,
-): string {
+function formatMonth(value: string | null): string {
     if (!value) {
         return '—';
     }
@@ -133,18 +133,13 @@ function formatMonth(
         1,
     );
 
-    return new Intl.DateTimeFormat(
-        'en-PH',
-        {
-            month: 'short',
-            year: 'numeric',
-        },
-    ).format(date);
+    return new Intl.DateTimeFormat('en-PH', {
+        month: 'short',
+        year: 'numeric',
+    }).format(date);
 }
 
-function formatStatus(
-    status: string,
-): string {
+function formatStatus(status: string): string {
     switch (status) {
         case 'submitted':
             return 'Submitted for Review';
@@ -155,14 +150,13 @@ function formatStatus(
         case 'approved':
             return 'Approved';
 
+        case 'draft':
         default:
             return 'Draft';
     }
 }
 
-function statusClasses(
-    status: string,
-): string {
+function statusClasses(status: string): string {
     switch (status) {
         case 'approved':
             return 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300';
@@ -178,9 +172,7 @@ function statusClasses(
     }
 }
 
-function formatAction(
-    action: string,
-): string {
+function formatAction(action: string): string {
     return action
         .split('_')
         .map(
@@ -191,47 +183,26 @@ function formatAction(
         .join(' ');
 }
 
-function formatBytes(
-    bytes: number | null,
-): string {
-    if (
-        bytes === null ||
-        bytes <= 0
-    ) {
+function formatBytes(bytes: number | null): string {
+    if (bytes === null || bytes <= 0) {
         return '';
     }
 
-    const units = [
-        'B',
-        'KB',
-        'MB',
-        'GB',
-    ];
+    const units = ['B', 'KB', 'MB', 'GB'];
 
     const index = Math.min(
         Math.floor(
-            Math.log(bytes) /
-                Math.log(1024),
+            Math.log(bytes) / Math.log(1024),
         ),
         units.length - 1,
     );
 
     const value =
-        bytes /
-        Math.pow(
-            1024,
-            index,
-        );
+        bytes / Math.pow(1024, index);
 
     return `${value.toFixed(
         index === 0 ? 0 : 1,
     )} ${units[index]}`;
-}
-
-interface ItemAttachmentsProps {
-    ppmpId: number;
-    item: PpmpItem;
-    canEdit: boolean;
 }
 
 function ItemAttachments({
@@ -298,8 +269,7 @@ function ItemAttachments({
                         errors.attachment;
 
                     setUploadError(
-                        typeof error ===
-                            'string'
+                        typeof error === 'string'
                             ? error
                             : 'The file could not be uploaded.',
                     );
@@ -330,8 +300,7 @@ function ItemAttachments({
 
     return (
         <div className="min-w-[240px] space-y-3">
-            {item.attachments.length >
-            0 ? (
+            {item.attachments.length > 0 ? (
                 <div className="space-y-2">
                     {item.attachments.map(
                         (attachment) => (
@@ -384,8 +353,8 @@ function ItemAttachments({
                 </div>
             ) : (
                 <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                    No supporting
-                    documents uploaded.
+                    No supporting documents
+                    uploaded.
                 </div>
             )}
 
@@ -407,17 +376,14 @@ function ItemAttachments({
                                     null,
                             );
 
-                            setUploadError(
-                                null,
-                            );
+                            setUploadError(null);
                         }}
                         className="block w-full text-xs file:mr-2 file:rounded-md file:border file:bg-background file:px-2 file:py-1 file:text-xs file:font-medium"
                     />
 
                     <div className="text-[11px] text-muted-foreground">
-                        PDF, Word, Excel,
-                        JPG or PNG; maximum
-                        20 MB.
+                        PDF, Word, Excel, JPG or
+                        PNG; maximum 20 MB.
                     </div>
 
                     {uploadError && (
@@ -431,8 +397,7 @@ function ItemAttachments({
                         size="sm"
                         variant="outline"
                         disabled={
-                            uploading ||
-                            !file
+                            uploading || !file
                         }
                         className="w-full"
                     >
@@ -451,8 +416,7 @@ export default function ShowPpmp({
     can,
     flash,
 }: ShowProps) {
-    const breadcrumbs:
-        BreadcrumbItem[] = [
+    const breadcrumbs: BreadcrumbItem[] = [
         {
             title: 'Dashboard',
             href: '/dashboard',
@@ -466,6 +430,227 @@ export default function ShowPpmp({
             href: `/ppmps/${ppmp.id}`,
         },
     ];
+
+    const [
+        returnRemarks,
+        setReturnRemarks,
+    ] = useState('');
+
+    const [
+        showReturnForm,
+        setShowReturnForm,
+    ] = useState(false);
+
+    const [
+        approvedFile,
+        setApprovedFile,
+    ] = useState<File | null>(null);
+
+    const [
+        showApproveForm,
+        setShowApproveForm,
+    ] = useState(false);
+
+    const [
+        workflowProcessing,
+        setWorkflowProcessing,
+    ] = useState(false);
+
+    const [
+        workflowError,
+        setWorkflowError,
+    ] = useState<string | null>(null);
+
+    function submitPpmp() {
+        const confirmed = window.confirm(
+                'Submit this PPMP for review? You will not be able to edit it while it is under review.',
+            );
+        if (!confirmed) { return; }
+        router.patch(
+            `/ppmps/${ppmp.id}/submit`,
+            {},
+            {
+                preserveScroll: true,
+
+                onStart: () => {
+                    setWorkflowProcessing(
+                        true,
+                    );
+
+                    setWorkflowError(null);
+                },
+                onFinish: () => {
+                    setWorkflowProcessing(
+                        false,
+                    );
+                },
+                onError: (errors) => {
+                    const firstError =
+                        Object.values(
+                            errors,
+                        )[0];
+
+                    setWorkflowError(
+                        typeof firstError ===
+                            'string'
+                            ? firstError
+                            : 'The PPMP could not be submitted.',
+                    );
+                },
+            },
+        );
+    }
+
+    function resubmitPpmp() {
+        const confirmed =
+            window.confirm(
+                'Resubmit the revised PPMP for review?',
+            );
+        if (!confirmed) { return; }
+        router.patch(
+            `/ppmps/${ppmp.id}/resubmit`,
+            {},
+            {
+                preserveScroll: true,
+
+                onStart: () => {
+                    setWorkflowProcessing(
+                        true,
+                    );
+
+                    setWorkflowError(null);
+                },
+                onFinish: () => {
+                    setWorkflowProcessing(
+                        false,
+                    );
+                },
+                onError: (errors) => {
+                    const firstError =
+                        Object.values(
+                            errors,
+                        )[0];
+
+                    setWorkflowError(
+                        typeof firstError ===
+                            'string'
+                            ? firstError
+                            : 'The PPMP could not be resubmitted.',
+                    );
+                },
+            },
+        );
+    }
+
+    function returnForRevision( event: FormEvent<HTMLFormElement>,) {
+        event.preventDefault();
+        if (!returnRemarks.trim()) {
+            setWorkflowError(
+                'Please provide the reason for returning the PPMP.',
+            );
+            return;
+        }
+
+        router.patch(
+            `/ppmps/${ppmp.id}/return-for-revision`,
+            {
+                remarks:
+                    returnRemarks,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => { setWorkflowProcessing(
+                        true,
+                    );
+
+                    setWorkflowError(null);
+                },
+                onFinish: () => { setWorkflowProcessing(
+                        false,
+                    );
+                },
+                onSuccess: () => { setShowReturnForm(
+                        false,
+                    );
+
+                    setReturnRemarks('');
+                },
+                onError: (errors) => {
+                    const error =
+                        errors.remarks ??
+                        errors.workflow;
+
+                    setWorkflowError(
+                        typeof error ===
+                            'string'
+                            ? error
+                            : 'The PPMP could not be returned.',
+                    );
+                },
+            },
+        );
+    }
+
+    function approvePpmp(
+        event: FormEvent<HTMLFormElement>,
+    ) {
+        event.preventDefault();
+
+        if (!approvedFile) {
+            setWorkflowError(
+                'Please select the scanned approved PPMP.',
+            );
+
+            return;
+        }
+
+        router.post(
+            `/ppmps/${ppmp.id}/approve`,
+            {
+                approved_ppmp:
+                    approvedFile,
+            },
+            {
+                forceFormData: true,
+                preserveScroll: true,
+
+                onStart: () => {
+                    setWorkflowProcessing(
+                        true,
+                    );
+
+                    setWorkflowError(null);
+                },
+
+                onFinish: () => {
+                    setWorkflowProcessing(
+                        false,
+                    );
+                },
+
+                onSuccess: () => {
+                    setShowApproveForm(
+                        false,
+                    );
+
+                    setApprovedFile(null);
+                },
+
+                onError: (errors) => {
+                    const error =
+                        errors.approved_ppmp ??
+                        errors.workflow;
+
+                    setWorkflowError(
+                        typeof error ===
+                            'string'
+                            ? error
+                            : 'The PPMP could not be approved.',
+                    );
+                },
+            },
+        );
+    }
 
     return (
         <AppLayout
@@ -514,9 +699,7 @@ export default function ShowPpmp({
                         </Button>
 
                         {can.edit && (
-                            <Button
-                                asChild
-                            >
+                            <Button asChild>
                                 <Link
                                     href={`/ppmps/${ppmp.id}/edit`}
                                 >
@@ -527,11 +710,10 @@ export default function ShowPpmp({
                     </div>
                 </div>
 
+                {/* SUCCESS MESSAGE */}
                 {flash.success && (
                     <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
-                        {
-                            flash.success
-                        }
+                        {flash.success}
                     </div>
                 )}
 
@@ -569,15 +751,13 @@ export default function ShowPpmp({
 
                             <div className="mt-1 font-semibold">
                                 {
-                                    ppmp.office
-                                        .code
+                                    ppmp.office.code
                                 }
                             </div>
 
                             <div className="text-xs text-muted-foreground">
                                 {
-                                    ppmp.office
-                                        .name
+                                    ppmp.office.name
                                 }
                             </div>
                         </div>
@@ -616,12 +796,301 @@ export default function ShowPpmp({
                     </div>
                 </section>
 
+                {/* WORKFLOW */}
+                <section className="rounded-xl border bg-background p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h2 className="text-lg font-semibold">
+                                Workflow Actions
+                            </h2>
+
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                Manage the current
+                                PPMP workflow status.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                            {can.submit && (
+                                <Button
+                                    type="button"
+                                    disabled={
+                                        workflowProcessing
+                                    }
+                                    onClick={
+                                        submitPpmp
+                                    }
+                                >
+                                    Submit for
+                                    Review
+                                </Button>
+                            )}
+
+                            {can.resubmit && (
+                                <Button
+                                    type="button"
+                                    disabled={
+                                        workflowProcessing
+                                    }
+                                    onClick={
+                                        resubmitPpmp
+                                    }
+                                >
+                                    Resubmit for
+                                    Review
+                                </Button>
+                            )}
+
+                            {can.return_for_revision && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={
+                                        workflowProcessing
+                                    }
+                                    onClick={() => {
+                                        setShowReturnForm(
+                                            !showReturnForm,
+                                        );
+
+                                        setShowApproveForm(
+                                            false,
+                                        );
+
+                                        setWorkflowError(
+                                            null,
+                                        );
+                                    }}
+                                >
+                                    Return for
+                                    Revision
+                                </Button>
+                            )}
+
+                            {can.approve && (
+                                <Button
+                                    type="button"
+                                    disabled={
+                                        workflowProcessing
+                                    }
+                                    onClick={() => {
+                                        setShowApproveForm(
+                                            !showApproveForm,
+                                        );
+
+                                        setShowReturnForm(
+                                            false,
+                                        );
+
+                                        setWorkflowError(
+                                            null,
+                                        );
+                                    }}
+                                >
+                                    Approve PPMP
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+
+                    {workflowError && (
+                        <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+                            {workflowError}
+                        </div>
+                    )}
+
+                    {ppmp.status ===
+                        'returned_for_revision' &&
+                        ppmp.remarks && (
+                            <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950">
+                                <div className="font-medium text-amber-800 dark:text-amber-200">
+                                    Revision
+                                    Required
+                                </div>
+
+                                <p className="mt-2 whitespace-pre-wrap text-sm text-amber-700 dark:text-amber-300">
+                                    {
+                                        ppmp.remarks
+                                    }
+                                </p>
+                            </div>
+                        )}
+
+                    {/* RETURN FORM */}
+                    {showReturnForm && (
+                        <form
+                            onSubmit={
+                                returnForRevision
+                            }
+                            className="mt-5 max-w-2xl space-y-3 rounded-lg border p-4"
+                        >
+                            <div>
+                                <h3 className="font-medium">
+                                    Return for
+                                    Revision
+                                </h3>
+
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Explain what
+                                    the PPMP
+                                    Coordinator
+                                    needs to
+                                    revise.
+                                </p>
+                            </div>
+
+                            <textarea
+                                value={
+                                    returnRemarks
+                                }
+                                onChange={(
+                                    event,
+                                ) =>
+                                    setReturnRemarks(
+                                        event
+                                            .target
+                                            .value,
+                                    )
+                                }
+                                rows={5}
+                                placeholder="Enter revision remarks..."
+                                className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                                required
+                            />
+
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() =>
+                                        setShowReturnForm(
+                                            false,
+                                        )
+                                    }
+                                >
+                                    Cancel
+                                </Button>
+
+                                <Button
+                                    type="submit"
+                                    variant="destructive"
+                                    disabled={
+                                        workflowProcessing
+                                    }
+                                >
+                                    {workflowProcessing
+                                        ? 'Returning...'
+                                        : 'Confirm Return'}
+                                </Button>
+                            </div>
+                        </form>
+                    )}
+
+                    {/* APPROVE FORM */}
+                    {showApproveForm && (
+                        <form
+                            onSubmit={
+                                approvePpmp
+                            }
+                            className="mt-5 max-w-2xl space-y-4 rounded-lg border p-4"
+                        >
+                            <div>
+                                <h3 className="font-medium">
+                                    Approve PPMP
+                                </h3>
+
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    The actual
+                                    PPMP must
+                                    already have
+                                    been approved
+                                    and signed
+                                    outside the
+                                    system.
+                                    Upload the
+                                    scanned
+                                    approved copy
+                                    to record its
+                                    approval.
+                                </p>
+                            </div>
+
+                            <div className="grid gap-2">
+                                <label
+                                    htmlFor="approved_ppmp"
+                                    className="text-sm font-medium"
+                                >
+                                    Scanned
+                                    Approved
+                                    PPMP
+                                </label>
+
+                                <input
+                                    id="approved_ppmp"
+                                    type="file"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    onChange={(
+                                        event,
+                                    ) =>
+                                        setApprovedFile(
+                                            event
+                                                .target
+                                                .files?.[0] ??
+                                                null,
+                                        )
+                                    }
+                                    className="block w-full rounded-md border bg-background p-2 text-sm"
+                                    required
+                                />
+
+                                <p className="text-xs text-muted-foreground">
+                                    Accepted:
+                                    PDF, JPG,
+                                    JPEG, PNG;
+                                    maximum 20
+                                    MB.
+                                </p>
+                            </div>
+
+                            <div className="flex justify-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setShowApproveForm(
+                                            false,
+                                        );
+
+                                        setApprovedFile(
+                                            null,
+                                        );
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+
+                                <Button
+                                    type="submit"
+                                    disabled={
+                                        workflowProcessing ||
+                                        !approvedFile
+                                    }
+                                >
+                                    {workflowProcessing
+                                        ? 'Approving...'
+                                        : 'Confirm Approval'}
+                                </Button>
+                            </div>
+                        </form>
+                    )}
+                </section>
+
                 {/* PROCUREMENT ITEMS */}
                 <section className="overflow-hidden rounded-xl border bg-background">
                     <div className="border-b p-5">
                         <h2 className="text-lg font-semibold">
-                            Procurement
-                            Project Details
+                            Procurement Project
+                            Details
                         </h2>
 
                         <p className="mt-1 text-sm text-muted-foreground">
@@ -695,14 +1164,11 @@ export default function ShowPpmp({
                             </thead>
 
                             <tbody className="divide-y">
-                                {ppmp.items
-                                    .length ===
+                                {ppmp.items.length ===
                                 0 ? (
                                     <tr>
                                         <td
-                                            colSpan={
-                                                12
-                                            }
+                                            colSpan={12}
                                             className="px-4 py-12 text-center text-muted-foreground"
                                         >
                                             No procurement
@@ -711,9 +1177,7 @@ export default function ShowPpmp({
                                     </tr>
                                 ) : (
                                     ppmp.items.map(
-                                        (
-                                            item,
-                                        ) => (
+                                        (item) => (
                                             <tr
                                                 key={
                                                     item.id
@@ -823,6 +1287,95 @@ export default function ShowPpmp({
                     </div>
                 </section>
 
+                {/* APPROVED PPMP */}
+                {ppmp.status ===
+                    'approved' &&
+                    ppmp.approved_copy && (
+                        <section className="rounded-xl border border-green-200 bg-green-50 p-5 dark:border-green-900 dark:bg-green-950">
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h2 className="font-semibold text-green-800 dark:text-green-200">
+                                        Approved
+                                        PPMP
+                                    </h2>
+
+                                    <p className="mt-1 text-sm text-green-700 dark:text-green-300">
+                                        Approved{' '}
+                                        {ppmp.approved_at
+                                            ? `on ${ppmp.approved_at}`
+                                            : ''}
+
+                                        {ppmp.approver
+                                            ? ` by ${ppmp.approver.name}`
+                                            : ''}
+                                    </p>
+
+                                    <p className="mt-2 text-sm">
+                                        {
+                                            ppmp
+                                                .approved_copy
+                                                .original_name
+                                        }
+                                    </p>
+
+                                    {ppmp
+                                        .approved_copy
+                                        .file_size !==
+                                        null && (
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            {formatBytes(
+                                                ppmp
+                                                    .approved_copy
+                                                    .file_size,
+                                            )}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <a
+                                    href={`/ppmps/${ppmp.id}/attachments/${ppmp.approved_copy.id}/download`}
+                                    className="inline-flex h-10 items-center justify-center rounded-md border bg-background px-4 text-sm font-medium hover:bg-muted"
+                                >
+                                    Download
+                                    Approved PPMP
+                                </a>
+                            </div>
+                        </section>
+                    )}
+
+                {/* PR ELIGIBILITY */}
+                {can.create_pr && (
+                    <section className="rounded-xl border bg-background p-5">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 className="font-semibold">
+                                    Purchase
+                                    Requests
+                                </h2>
+
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    This PPMP is
+                                    approved and
+                                    is now
+                                    eligible for
+                                    Purchase
+                                    Request
+                                    creation.
+                                </p>
+                            </div>
+
+                            <Button
+                                type="button"
+                                disabled
+                                title="Purchase Request module will be implemented next."
+                            >
+                                + Create
+                                Purchase Request
+                            </Button>
+                        </div>
+                    </section>
+                )}
+
                 {/* SIGNATURE INFORMATION */}
                 <section className="rounded-xl border bg-background p-5">
                     <h2 className="mb-5 text-lg font-semibold">
@@ -871,8 +1424,7 @@ export default function ShowPpmp({
                                 <div>
                                     <dt className="text-xs text-muted-foreground">
                                         Division
-                                        Chief /
-                                        Head
+                                        Chief / Head
                                     </dt>
 
                                     <dd className="font-medium">
@@ -920,9 +1472,7 @@ export default function ShowPpmp({
                     ) : (
                         <div className="space-y-3">
                             {ppmp.histories.map(
-                                (
-                                    history,
-                                ) => (
+                                (history) => (
                                     <div
                                         key={
                                             history.id
