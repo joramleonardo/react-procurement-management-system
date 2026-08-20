@@ -54,10 +54,13 @@ return new class extends Migration
 
                 $table->timestamps();
 
-                $table->index([
-                    'purchase_request_id',
-                    'acted_at',
-                ]);
+                $table->index(
+                    [
+                        'purchase_request_id',
+                        'acted_at',
+                    ],
+                    'pr_status_history_pr_acted_idx'
+                );
             }
         );
     }
