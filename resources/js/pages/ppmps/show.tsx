@@ -1364,13 +1364,12 @@ export default function ShowPpmp({
                                 </p>
                             </div>
 
-                            <Button
-                                type="button"
-                                disabled
-                                title="Purchase Request module will be implemented next."
-                            >
-                                + Create
-                                Purchase Request
+                            <Button asChild>
+                                <Link
+                                    href={`/ppmps/${ppmp.id}/purchase-requests/create`}
+                                >
+                                    + Create Purchase Request
+                                </Link>
                             </Button>
                         </div>
                     </section>

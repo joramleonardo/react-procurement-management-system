@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\UserAccountController;
 use App\Http\Controllers\PpmpController;
 use App\Http\Controllers\PpmpAttachmentController;
 use App\Http\Controllers\PpmpWorkflowController;
+use App\Http\Controllers\PurchaseRequestController;
 
 Route::get('/', function () {
     return Inertia::render('welcome');
@@ -190,6 +191,36 @@ Route::middleware(['auth'])->group(function () {
         ->whereNumber('ppmp')
         ->middleware('permission:ppmps.approve')
         ->name('ppmps.approve');
+
+    Route::get(
+        'purchase-requests',
+        [
+            PurchaseRequestController::class,
+            'index',
+        ]
+    )->name('purchase-requests.index');
+
+    Route::get(
+        'ppmps/{ppmp}/purchase-requests/create',
+        [
+            PurchaseRequestController::class,
+            'create',
+        ]
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:prs.create')
+        ->name('purchase-requests.create');
+
+    Route::post(
+        'ppmps/{ppmp}/purchase-requests',
+        [
+            PurchaseRequestController::class,
+            'store',
+        ]
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:prs.create')
+        ->name('purchase-requests.store');
 
 
 });

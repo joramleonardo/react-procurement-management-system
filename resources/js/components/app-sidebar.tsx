@@ -10,6 +10,7 @@ import {
     Folder,
     LayoutGrid,
     UsersRound,
+    FileText
 
 } from 'lucide-react';
 import AppLogo from './app-logo';
@@ -29,6 +30,11 @@ const mainNavItems: NavItem[] = [
         title: 'PPMP',
         url: '/ppmps',
         icon: ClipboardList,
+    },
+    {
+        title: 'Purchase Requests',
+        url: '/purchase-requests',
+        icon: FileText,
     },
 ];
 

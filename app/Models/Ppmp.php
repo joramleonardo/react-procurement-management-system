@@ -111,4 +111,11 @@ class Ppmp extends Model
     {
         return $this->status === 'approved';
     }
+
+    public function purchaseRequests()
+    {
+        return $this->hasMany(
+            PurchaseRequest::class
+        );
+    }
 }

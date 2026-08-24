@@ -62,4 +62,11 @@ class PpmpItem extends Model
             2
         );
     }
+
+    public function purchaseRequestItems()
+    {
+        return $this->hasMany(
+            PurchaseRequestItem::class
+        );
+    }
 }
