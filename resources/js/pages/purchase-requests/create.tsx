@@ -1,4 +1,9 @@
+// resources/js/pages/purchase-requests/create.tsx
+
 import InputError from '@/components/input-error';
+import { ActionBar } from '@/components/pms/action-bar';
+import { PageHeader } from '@/components/pms/page-header';
+import { SectionCard } from '@/components/pms/section-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +14,10 @@ import {
     Link,
     useForm,
 } from '@inertiajs/react';
+import {
+    FileText,
+    Plus,
+} from 'lucide-react';
 import {
     FormEventHandler,
     useMemo,
@@ -86,8 +95,7 @@ type PurchaseRequestFormData = {
     items: PrItemForm[];
 };
 
-type PrItemField =
-    keyof PrItemForm;
+type PrItemField = keyof PrItemForm;
 
 function createEmptyItem(): PrItemForm {
     return {
@@ -350,10 +358,8 @@ export default function CreatePurchaseRequest({
         );
 
     /*
-     * Total amount currently being drafted
-     * against each PPMP item.
-     *
-     * One PPMP item may fund multiple PR lines.
+     * Track the current draft amount against
+     * every selected PPMP item.
      */
     const draftUsageBySource =
         useMemo(() => {
@@ -394,17 +400,21 @@ export default function CreatePurchaseRequest({
         ]);
 
     function addItem() {
-        setData('items', [
-            ...data.items,
-            createEmptyItem(),
-        ]);
+        setData(
+            'items',
+            [
+                ...data.items,
+                createEmptyItem(),
+            ],
+        );
     }
 
     function removeItem(
         index: number,
     ) {
         if (
-            data.items.length === 1
+            data.items.length ===
+            1
         ) {
             return;
         }
@@ -527,122 +537,129 @@ export default function CreatePurchaseRequest({
 
             <form
                 onSubmit={submit}
-                className="flex flex-1 flex-col gap-6 p-4"
+                className="pms-page"
             >
-                {/* HEADER */}
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold">
-                            Create Purchase
-                            Request
-                        </h1>
+                {/* PAGE HEADER */}
+                <PageHeader
+                    eyebrow="Procurement"
+                    title="Create Purchase Request"
+                    description={`Create a GAM Appendix 60 Purchase Request based on approved ${ppmp.ppmp_no}.`}
+                    icon={FileText}
+                    actions={
+                        <div className="border-l-2 border-primary pl-4 text-right">
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                Total Amount
+                            </div>
 
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            GAM Appendix 60
-                            Purchase Request
-                            based on approved{' '}
-                            {
-                                ppmp.ppmp_no
-                            }.
-                        </p>
-                    </div>
-
-                    <div className="text-left lg:text-right">
-                        <div className="text-sm text-muted-foreground">
-                            Total Amount
+                            <div className="mt-0.5 text-xl font-semibold tabular-nums text-primary">
+                                {formatCurrency(
+                                    totalAmount,
+                                )}
+                            </div>
                         </div>
-
-                        <div className="text-2xl font-bold">
-                            {formatCurrency(
-                                totalAmount,
-                            )}
-                        </div>
-                    </div>
-                </div>
+                    }
+                />
 
                 {/* SOURCE PPMP */}
-                <section className="rounded-xl border bg-background p-5">
-                    <h2 className="text-lg font-semibold">
-                        Source PPMP
-                    </h2>
-
-                    <div className="mt-4 grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-                        <div>
-                            <div className="text-xs text-muted-foreground">
+                <SectionCard
+                    title="Source PPMP"
+                    description="This Purchase Request will be charged against the approved PPMP shown below."
+                >
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {/* PPMP NUMBER */}
+                        <div className="pms-readonly">
+                            <div className="pms-readonly-label">
                                 PPMP No.
                             </div>
 
-                            <div className="font-medium">
+                            <div className="pms-readonly-value">
                                 {
                                     ppmp.ppmp_no
                                 }
                             </div>
                         </div>
 
-                        <div>
-                            <div className="text-xs text-muted-foreground">
-                                Fiscal Year
+                        {/* FISCAL YEAR */}
+                        <div className="pms-readonly">
+                            <div className="pms-readonly-label">
+                                Fiscal
+                                Year
                             </div>
 
-                            <div className="font-medium">
+                            <div className="pms-readonly-value">
                                 {
                                     ppmp.fiscal_year
                                 }
                             </div>
                         </div>
 
-                        <div>
-                            <div className="text-xs text-muted-foreground">
-                                PPMP Budget
+                        {/* TOTAL BUDGET */}
+                        <div className="pms-readonly">
+                            <div className="pms-readonly-label">
+                                PPMP
+                                Budget
                             </div>
 
-                            <div className="font-medium">
+                            <div className="pms-readonly-value text-primary">
                                 {formatCurrency(
                                     ppmp.total_budget,
                                 )}
                             </div>
                         </div>
 
-                        <div>
-                            <div className="text-xs text-muted-foreground">
-                                Approved PR
+                        {/* UTILIZATION */}
+                        <div className="pms-readonly">
+                            <div className="pms-readonly-label">
+                                Approved
+                                PR
                                 Utilization
                             </div>
 
-                            <div className="font-medium">
+                            <div className="pms-readonly-value">
                                 {formatCurrency(
                                     ppmp.approved_pr_total,
                                 )}
                             </div>
                         </div>
                     </div>
-                </section>
+                </SectionCard>
 
-                {/* GAM HEADER */}
-                <section className="rounded-xl border bg-background p-5">
-                    <div className="border-b pb-4 text-center">
-                        <div className="text-sm font-medium">
-                            DEPARTMENT OF
-                            SCIENCE AND
-                            TECHNOLOGY
+                {/* PURCHASE REQUEST INFORMATION */}
+                <SectionCard
+                    title="Purchase Request Information"
+                    description="Enter the information required for the GAM Appendix 60 Purchase Request form."
+                >
+                    <div className="mb-5 rounded-xl border bg-primary/5 px-4 py-4 text-center">
+                        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                            Department
+                            of Science
+                            and
+                            Technology
                         </div>
 
-                        <h2 className="mt-2 text-xl font-bold">
-                            PURCHASE REQUEST
-                        </h2>
+                        <div className="mt-1 text-lg font-bold tracking-wide text-foreground">
+                            PURCHASE
+                            REQUEST
+                        </div>
 
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            GAM Appendix 60
-                        </p>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                            GAM Appendix
+                            60
+                        </div>
                     </div>
 
-                    <div className="mt-5 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                        <div className="grid gap-2">
-                            <Label>
-                                Entity Name
+                    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                        {/* ENTITY NAME */}
+                        <div className="pms-field">
+                            <Label
+                                htmlFor="entity_name"
+                            >
+                                Entity
+                                Name
                             </Label>
 
                             <Input
+                                id="entity_name"
                                 value={
                                     data.entity_name
                                 }
@@ -665,12 +682,17 @@ export default function CreatePurchaseRequest({
                             />
                         </div>
 
-                        <div className="grid gap-2">
-                            <Label>
-                                Fund Cluster
+                        {/* FUND CLUSTER */}
+                        <div className="pms-field">
+                            <Label
+                                htmlFor="fund_cluster"
+                            >
+                                Fund
+                                Cluster
                             </Label>
 
                             <Input
+                                id="fund_cluster"
                                 value={
                                     data.fund_cluster
                                 }
@@ -684,6 +706,7 @@ export default function CreatePurchaseRequest({
                                             .value,
                                     )
                                 }
+                                placeholder="Enter fund cluster"
                             />
 
                             <InputError
@@ -693,14 +716,15 @@ export default function CreatePurchaseRequest({
                             />
                         </div>
 
-                        <div className="grid gap-2">
+                        {/* OFFICE */}
+                        <div className="pms-field">
                             <Label>
                                 Office /
                                 Section
                             </Label>
 
-                            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                                <div className="font-medium">
+                            <div className="pms-readonly">
+                                <div className="pms-readonly-value">
                                     {
                                         ppmp
                                             .office
@@ -708,7 +732,7 @@ export default function CreatePurchaseRequest({
                                     }
                                 </div>
 
-                                <div className="text-xs text-muted-foreground">
+                                <div className="mt-0.5 text-xs text-muted-foreground">
                                     {
                                         ppmp
                                             .office
@@ -718,24 +742,30 @@ export default function CreatePurchaseRequest({
                             </div>
                         </div>
 
-                        <div className="grid gap-2">
+                        {/* PR NUMBER */}
+                        <div className="pms-field">
                             <Label>
                                 PR No.
                             </Label>
 
-                            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                                Automatically
-                                assigned after
-                                saving
+                            <div className="pms-readonly">
+                                <div className="pms-readonly-value text-muted-foreground">
+                                    Automatically
+                                    assigned
+                                    after
+                                    saving
+                                </div>
                             </div>
                         </div>
 
-                        <div className="grid gap-2">
+                        {/* RESPONSIBILITY CENTER */}
+                        <div className="pms-field">
                             <Label
                                 htmlFor="responsibility_center_code"
                             >
                                 Responsibility
-                                Center Code
+                                Center
+                                Code
                             </Label>
 
                             <Input
@@ -753,6 +783,7 @@ export default function CreatePurchaseRequest({
                                             .value,
                                     )
                                 }
+                                placeholder="Enter responsibility center code"
                             />
 
                             <InputError
@@ -762,7 +793,8 @@ export default function CreatePurchaseRequest({
                             />
                         </div>
 
-                        <div className="grid gap-2">
+                        {/* DATE */}
+                        <div className="pms-field">
                             <Label
                                 htmlFor="pr_date"
                             >
@@ -794,26 +826,13 @@ export default function CreatePurchaseRequest({
                             />
                         </div>
                     </div>
-                </section>
+                </SectionCard>
 
-                {/* PR ITEMS */}
-                <section className="overflow-hidden rounded-xl border bg-background">
-                    <div className="flex flex-col gap-3 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 className="text-lg font-semibold">
-                                Purchase
-                                Request Items
-                            </h2>
-
-                            <p className="mt-1 text-sm text-muted-foreground">
-                                Each item must
-                                identify the
-                                approved PPMP
-                                item that funds
-                                the purchase.
-                            </p>
-                        </div>
-
+                {/* PURCHASE REQUEST ITEMS */}
+                <SectionCard
+                    title="Purchase Request Items"
+                    description="Add the items included in this request and select the approved PPMP budget source for each item."
+                    actions={
                         <Button
                             type="button"
                             variant="outline"
@@ -821,22 +840,27 @@ export default function CreatePurchaseRequest({
                                 addItem
                             }
                         >
-                            + Add Item
-                        </Button>
-                    </div>
+                            <Plus className="size-4" />
 
+                            Add Item
+                        </Button>
+                    }
+                    contentClassName="p-0"
+                >
                     <div className="overflow-x-auto">
                         <table className="min-w-[1900px] text-sm">
                             <thead className="border-b bg-muted/50">
                                 <tr>
                                     <th className="w-[320px] px-3 py-3 text-left">
-                                        PPMP Budget
+                                        PPMP
+                                        Budget
                                         Source
                                     </th>
 
                                     <th className="w-[150px] px-3 py-3 text-left">
                                         Stock /
-                                        Property No.
+                                        Property
+                                        No.
                                     </th>
 
                                     <th className="w-[120px] px-3 py-3 text-left">
@@ -853,11 +877,13 @@ export default function CreatePurchaseRequest({
                                     </th>
 
                                     <th className="w-[190px] px-3 py-3 text-right">
-                                        Unit Cost
+                                        Unit
+                                        Cost
                                     </th>
 
                                     <th className="w-[190px] px-3 py-3 text-right">
-                                        Total Cost
+                                        Total
+                                        Cost
                                     </th>
 
                                     <th className="w-[100px] px-3 py-3 text-center">
@@ -903,8 +929,9 @@ export default function CreatePurchaseRequest({
                                                 key={
                                                     index
                                                 }
-                                                className="align-top"
+                                                className="align-top transition-colors hover:bg-muted/20"
                                             >
+                                                {/* PPMP SOURCE */}
                                                 <td className="p-2">
                                                     <select
                                                         value={
@@ -974,62 +1001,75 @@ export default function CreatePurchaseRequest({
 
                                                     {source && (
                                                         <div
-                                                            className={`mt-2 rounded-md border p-2 text-xs ${
+                                                            className={`mt-2 rounded-lg border p-3 text-xs leading-5 ${
                                                                 overBudget
-                                                                    ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300'
-                                                                    : 'bg-muted/30 text-muted-foreground'
+                                                                    ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300'
+                                                                    : 'border-blue-100 bg-blue-50/50 text-muted-foreground dark:border-blue-900 dark:bg-blue-950/20'
                                                             }`}
                                                         >
-                                                            <div>
-                                                                Approved
-                                                                PPMP
-                                                                budget:{' '}
-                                                                <span className="font-medium">
-                                                                    {formatCurrency(
-                                                                        source.estimated_budget,
-                                                                    )}
-                                                                </span>
-                                                            </div>
+                                                            <div className="grid gap-1">
+                                                                <div className="flex justify-between gap-3">
+                                                                    <span>
+                                                                        PPMP
+                                                                        Budget
+                                                                    </span>
 
-                                                            <div>
-                                                                Already
-                                                                used:{' '}
-                                                                <span className="font-medium">
-                                                                    {formatCurrency(
-                                                                        source.approved_pr_amount,
-                                                                    )}
-                                                                </span>
-                                                            </div>
+                                                                    <span className="font-semibold">
+                                                                        {formatCurrency(
+                                                                            source.estimated_budget,
+                                                                        )}
+                                                                    </span>
+                                                                </div>
 
-                                                            <div>
-                                                                Remaining:{' '}
-                                                                <span className="font-medium">
-                                                                    {formatCurrency(
-                                                                        source.remaining_balance,
-                                                                    )}
-                                                                </span>
-                                                            </div>
+                                                                <div className="flex justify-between gap-3">
+                                                                    <span>
+                                                                        Already
+                                                                        Used
+                                                                    </span>
 
-                                                            <div>
-                                                                This
-                                                                draft:{' '}
-                                                                <span className="font-medium">
-                                                                    {formatCurrency(
-                                                                        usage,
-                                                                    )}
-                                                                </span>
+                                                                    <span className="font-semibold">
+                                                                        {formatCurrency(
+                                                                            source.approved_pr_amount,
+                                                                        )}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="flex justify-between gap-3">
+                                                                    <span>
+                                                                        Remaining
+                                                                    </span>
+
+                                                                    <span className="font-semibold">
+                                                                        {formatCurrency(
+                                                                            source.remaining_balance,
+                                                                        )}
+                                                                    </span>
+                                                                </div>
+
+                                                                <div className="flex justify-between gap-3 border-t pt-1">
+                                                                    <span>
+                                                                        This
+                                                                        Draft
+                                                                    </span>
+
+                                                                    <span className="font-semibold">
+                                                                        {formatCurrency(
+                                                                            usage,
+                                                                        )}
+                                                                    </span>
+                                                                </div>
                                                             </div>
 
                                                             {overBudget && (
-                                                                <div className="mt-2 font-medium">
-                                                                    Draft
-                                                                    amount
+                                                                <div className="mt-2 border-t border-red-200 pt-2 font-medium dark:border-red-900">
+                                                                    This
+                                                                    draft
                                                                     exceeds
                                                                     the
                                                                     remaining
                                                                     PPMP
-                                                                    balance.
-                                                                    It
+                                                                    balance
+                                                                    and
                                                                     cannot
                                                                     be
                                                                     approved
@@ -1041,6 +1081,7 @@ export default function CreatePurchaseRequest({
                                                     )}
                                                 </td>
 
+                                                {/* STOCK PROPERTY NO */}
                                                 <td className="p-2">
                                                     <Input
                                                         value={
@@ -1066,6 +1107,7 @@ export default function CreatePurchaseRequest({
                                                     />
                                                 </td>
 
+                                                {/* UNIT */}
                                                 <td className="p-2">
                                                     <Input
                                                         value={
@@ -1092,6 +1134,7 @@ export default function CreatePurchaseRequest({
                                                     />
                                                 </td>
 
+                                                {/* DESCRIPTION */}
                                                 <td className="p-2">
                                                     <textarea
                                                         value={
@@ -1123,6 +1166,7 @@ export default function CreatePurchaseRequest({
                                                     />
                                                 </td>
 
+                                                {/* QUANTITY */}
                                                 <td className="p-2">
                                                     <Input
                                                         type="text"
@@ -1154,38 +1198,45 @@ export default function CreatePurchaseRequest({
                                                     />
                                                 </td>
 
+                                                {/* UNIT COST */}
                                                 <td className="p-2">
-                                                    <Input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        className="text-right"
-                                                        value={formatMoneyInput(
-                                                            item.unit_cost,
-                                                        )}
-                                                        onChange={(
-                                                            event,
-                                                        ) =>
-                                                            updateItem(
-                                                                index,
-                                                                'unit_cost',
-                                                                sanitizeMoneyInput(
-                                                                    event
-                                                                        .target
-                                                                        .value,
-                                                                ),
-                                                            )
-                                                        }
-                                                        onBlur={() =>
-                                                            updateItem(
-                                                                index,
-                                                                'unit_cost',
-                                                                normalizeMoneyInput(
-                                                                    item.unit_cost,
-                                                                ),
-                                                            )
-                                                        }
-                                                        placeholder="0.00"
-                                                    />
+                                                    <div className="relative">
+                                                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                                                            ₱
+                                                        </span>
+
+                                                        <Input
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            className="pl-7 text-right"
+                                                            value={formatMoneyInput(
+                                                                item.unit_cost,
+                                                            )}
+                                                            onChange={(
+                                                                event,
+                                                            ) =>
+                                                                updateItem(
+                                                                    index,
+                                                                    'unit_cost',
+                                                                    sanitizeMoneyInput(
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    ),
+                                                                )
+                                                            }
+                                                            onBlur={() =>
+                                                                updateItem(
+                                                                    index,
+                                                                    'unit_cost',
+                                                                    normalizeMoneyInput(
+                                                                        item.unit_cost,
+                                                                    ),
+                                                                )
+                                                            }
+                                                            placeholder="0.00"
+                                                        />
+                                                    </div>
 
                                                     <InputError
                                                         message={errorFor(
@@ -1194,8 +1245,9 @@ export default function CreatePurchaseRequest({
                                                     />
                                                 </td>
 
+                                                {/* TOTAL COST */}
                                                 <td className="whitespace-nowrap p-2 text-right">
-                                                    <div className="rounded-md bg-muted/40 px-3 py-2 font-semibold">
+                                                    <div className="rounded-lg border bg-primary/5 px-3 py-2 font-semibold text-primary">
                                                         {formatCurrency(
                                                             lineTotals[
                                                                 index
@@ -1205,9 +1257,12 @@ export default function CreatePurchaseRequest({
                                                     </div>
                                                 </td>
 
+                                                {/* REMOVE */}
                                                 <td className="p-2 text-center">
-                                                    <button
+                                                    <Button
                                                         type="button"
+                                                        variant="outline"
+                                                        size="sm"
                                                         disabled={
                                                             data
                                                                 .items
@@ -1219,10 +1274,10 @@ export default function CreatePurchaseRequest({
                                                                 index,
                                                             )
                                                         }
-                                                        className="rounded-md border px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950"
                                                     >
                                                         Remove
-                                                    </button>
+                                                    </Button>
                                                 </td>
                                             </tr>
                                         );
@@ -1230,19 +1285,19 @@ export default function CreatePurchaseRequest({
                                 )}
                             </tbody>
 
-                            <tfoot className="border-t bg-muted/30">
+                            <tfoot className="border-t bg-primary/5">
                                 <tr>
                                     <td
                                         colSpan={
                                             6
                                         }
-                                        className="px-4 py-4 text-right font-semibold"
+                                        className="px-4 py-4 text-right text-sm font-semibold"
                                     >
                                         TOTAL
                                         AMOUNT
                                     </td>
 
-                                    <td className="px-4 py-4 text-right text-base font-bold">
+                                    <td className="whitespace-nowrap px-4 py-4 text-right text-base font-bold text-primary">
                                         {formatCurrency(
                                             totalAmount,
                                         )}
@@ -1253,15 +1308,20 @@ export default function CreatePurchaseRequest({
                             </tfoot>
                         </table>
                     </div>
-                </section>
+                </SectionCard>
 
                 {/* PURPOSE */}
-                <section className="rounded-xl border bg-background p-5">
-                    <div className="grid gap-2">
+                <SectionCard
+                    title="Purpose"
+                    description="Briefly describe why these items are being requested."
+                >
+                    <div className="pms-field">
                         <Label
                             htmlFor="purpose"
                         >
-                            Purpose
+                            Purpose of
+                            Purchase
+                            Request
                         </Label>
 
                         <textarea
@@ -1274,7 +1334,8 @@ export default function CreatePurchaseRequest({
                             ) =>
                                 setData(
                                     'purpose',
-                                    event.target
+                                    event
+                                        .target
                                         .value,
                                 )
                             }
@@ -1291,29 +1352,44 @@ export default function CreatePurchaseRequest({
                             }
                         />
                     </div>
-                </section>
+                </SectionCard>
 
-                {/* REQUESTED / APPROVED */}
-                <section className="rounded-xl border bg-background p-5">
+                {/* SIGNATORIES */}
+                <SectionCard
+                    title="Request and Approval Signatories"
+                    description="Enter the names and designations that will appear on the official Purchase Request form."
+                >
                     <div className="grid gap-5 md:grid-cols-2">
-                        <div className="space-y-4 rounded-lg border p-4">
-                            <h3 className="font-semibold">
-                                Requested By
-                            </h3>
+                        {/* REQUESTED BY */}
+                        <div className="space-y-4 border border-border bg-secondary/20 p-4">
+                            <div>
+                                <h3 className="font-semibold">
+                                    Requested
+                                    By
+                                </h3>
 
-                            <p className="text-xs text-muted-foreground">
-                                Printed name and
-                                designation that
-                                will appear on
-                                the PR form.
-                            </p>
+                                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                    Usually
+                                    the
+                                    Division
+                                    Chief or
+                                    Head of
+                                    the
+                                    requesting
+                                    unit.
+                                </p>
+                            </div>
 
-                            <div className="grid gap-2">
-                                <Label>
-                                    Printed Name
+                            <div className="pms-field">
+                                <Label
+                                    htmlFor="requested_by_name"
+                                >
+                                    Printed
+                                    Name
                                 </Label>
 
                                 <Input
+                                    id="requested_by_name"
                                     value={
                                         data.requested_by_name
                                     }
@@ -1336,12 +1412,15 @@ export default function CreatePurchaseRequest({
                                 />
                             </div>
 
-                            <div className="grid gap-2">
-                                <Label>
+                            <div className="pms-field">
+                                <Label
+                                    htmlFor="requested_by_designation"
+                                >
                                     Designation
                                 </Label>
 
                                 <Input
+                                    id="requested_by_designation"
                                     value={
                                         data.requested_by_designation
                                     }
@@ -1366,27 +1445,40 @@ export default function CreatePurchaseRequest({
                             </div>
                         </div>
 
-                        <div className="space-y-4 rounded-lg border p-4">
-                            <h3 className="font-semibold">
-                                Approved By
-                            </h3>
+                        {/* APPROVED BY */}
+                        <div className="space-y-4 border border-border bg-secondary/20 p-4">
+                            <div>
+                                <h3 className="font-semibold">
+                                    Approved
+                                    By
+                                </h3>
 
-                            <p className="text-xs text-muted-foreground">
-                                This records the
-                                name printed on
-                                the physical PR;
-                                system approval
-                                remains a
-                                separate
-                                workflow action.
-                            </p>
+                                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                    This is
+                                    the
+                                    printed
+                                    signatory
+                                    on the
+                                    official
+                                    PR and is
+                                    separate
+                                    from the
+                                    system
+                                    approval
+                                    action.
+                                </p>
+                            </div>
 
-                            <div className="grid gap-2">
-                                <Label>
-                                    Printed Name
+                            <div className="pms-field">
+                                <Label
+                                    htmlFor="approved_by_name"
+                                >
+                                    Printed
+                                    Name
                                 </Label>
 
                                 <Input
+                                    id="approved_by_name"
                                     value={
                                         data.approved_by_name
                                     }
@@ -1409,12 +1501,15 @@ export default function CreatePurchaseRequest({
                                 />
                             </div>
 
-                            <div className="grid gap-2">
-                                <Label>
+                            <div className="pms-field">
+                                <Label
+                                    htmlFor="approved_by_designation"
+                                >
                                     Designation
                                 </Label>
 
                                 <Input
+                                    id="approved_by_designation"
                                     value={
                                         data.approved_by_designation
                                     }
@@ -1439,48 +1534,48 @@ export default function CreatePurchaseRequest({
                             </div>
                         </div>
                     </div>
-                </section>
+                </SectionCard>
 
                 {/* ACTION BAR */}
-                <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t bg-background/95 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <span className="text-sm text-muted-foreground">
-                            Total PR
-                            Amount:{' '}
-                        </span>
+                <ActionBar
+                    left={
+                        <div>
+                            <span className="text-sm text-muted-foreground">
+                                Total PR
+                                Amount:{' '}
+                            </span>
 
-                        <span className="font-bold">
-                            {formatCurrency(
-                                totalAmount,
-                            )}
-                        </span>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            asChild
+                            <span className="font-semibold text-primary">
+                                {formatCurrency(
+                                    totalAmount,
+                                )}
+                            </span>
+                        </div>
+                    }
+                >
+                    <Button
+                        type="button"
+                        variant="outline"
+                        asChild
+                    >
+                        <Link
+                            href={`/ppmps/${ppmp.id}`}
                         >
-                            <Link
-                                href={`/ppmps/${ppmp.id}`}
-                            >
-                                Cancel
-                            </Link>
-                        </Button>
+                            Cancel
+                        </Link>
+                    </Button>
 
-                        <Button
-                            type="submit"
-                            disabled={
-                                processing
-                            }
-                        >
-                            {processing
-                                ? 'Saving Draft...'
-                                : 'Save as Draft'}
-                        </Button>
-                    </div>
-                </div>
+                    <Button
+                        type="submit"
+                        disabled={
+                            processing
+                        }
+                    >
+                        {processing
+                            ? 'Saving Draft...'
+                            : 'Save as Draft'}
+                    </Button>
+                </ActionBar>
             </form>
         </AppLayout>
     );

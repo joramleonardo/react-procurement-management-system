@@ -1,11 +1,26 @@
 import InputError from '@/components/input-error';
+import { ActionBar } from '@/components/pms/action-bar';
+import { DataTableShell } from '@/components/pms/data-table-shell';
+import { PageHeader } from '@/components/pms/page-header';
+import { SectionCard } from '@/components/pms/section-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, Link, useForm } from '@inertiajs/react';
-import { FormEventHandler, useMemo } from 'react';
+import {
+    Head,
+    Link,
+    useForm,
+} from '@inertiajs/react';
+import {
+    FileText,
+    Plus,
+} from 'lucide-react';
+import {
+    FormEventHandler,
+    useMemo,
+} from 'react';
 
 interface Office {
     id: number;
@@ -73,7 +88,8 @@ function createEmptyItem(): PpmpItemForm {
         project_type: '',
         quantity_size: '',
         recommended_mode_of_procurement: '',
-        pre_procurement_conference: false,
+        pre_procurement_conference:
+            false,
         procurement_start_month: '',
         procurement_end_month: '',
         expected_delivery_month: '',
@@ -83,27 +99,52 @@ function createEmptyItem(): PpmpItemForm {
     };
 }
 
-type ItemField = Exclude<keyof PpmpItemForm, 'id'>;
+type ItemField =
+    Exclude<
+        keyof PpmpItemForm,
+        'id'
+    >;
 
 const inputClass =
-    'w-full rounded-md border bg-background px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-ring';
+    'w-full border border-input bg-background px-2 py-2 text-sm outline-none';
 
-function formatCurrency(value: number): string {
-    return new Intl.NumberFormat('en-PH', {
-        style: 'currency',
-        currency: 'PHP',
-    }).format(value);
+function formatCurrency(
+    value: number,
+): string {
+    return new Intl.NumberFormat(
+        'en-PH',
+        {
+            style: 'currency',
+            currency: 'PHP',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        },
+    ).format(value);
 }
 
-function sanitizeBudgetInput(value: string): string {
-    const withoutCommas = value.replace(/,/g, '');
+function sanitizeBudgetInput(
+    value: string,
+): string {
+    const withoutCommas =
+        value.replace(/,/g, '');
 
-    const cleaned = withoutCommas.replace(/[^\d.]/g, '');
+    const cleaned =
+        withoutCommas.replace(
+            /[^\d.]/g,
+            '',
+        );
 
-    const parts = cleaned.split('.');
+    const parts =
+        cleaned.split('.');
 
-    const whole = parts[0] ?? '';
-    const decimal = parts.slice(1).join('').slice(0, 2);
+    const whole =
+        parts[0] ?? '';
+
+    const decimal =
+        parts
+            .slice(1)
+            .join('')
+            .slice(0, 2);
 
     if (cleaned.includes('.')) {
         return `${whole}.${decimal}`;
@@ -112,34 +153,49 @@ function sanitizeBudgetInput(value: string): string {
     return whole;
 }
 
-function formatBudgetInput(value: string): string {
+function formatBudgetInput(
+    value: string,
+): string {
     if (!value) {
         return '';
     }
 
-    const [wholePart, decimalPart] = value.split('.');
+    const [
+        wholePart,
+        decimalPart,
+    ] = value.split('.');
 
     const normalizedWhole =
-        wholePart.replace(/^0+(?=\d)/, '') || '0';
+        wholePart.replace(
+            /^0+(?=\d)/,
+            '',
+        ) || '0';
 
-    const formattedWhole = normalizedWhole.replace(
-        /\B(?=(\d{3})+(?!\d))/g,
-        ',',
-    );
+    const formattedWhole =
+        normalizedWhole.replace(
+            /\B(?=(\d{3})+(?!\d))/g,
+            ',',
+        );
 
-    if (decimalPart !== undefined) {
+    if (
+        decimalPart !== undefined
+    ) {
         return `${formattedWhole}.${decimalPart}`;
     }
 
     return formattedWhole;
 }
 
-function normalizeBudgetInput(value: string): string {
+function normalizeBudgetInput(
+    value: string,
+): string {
     if (!value) {
         return '';
     }
 
-    const amount = Number(value.replace(/,/g, ''));
+    const amount = Number(
+        value.replace(/,/g, ''),
+    );
 
     if (!Number.isFinite(amount)) {
         return '';
@@ -148,13 +204,18 @@ function normalizeBudgetInput(value: string): string {
     return amount.toFixed(2);
 }
 
-export default function EditPpmp({ ppmp }: EditProps) {
+export default function EditPpmp({
+    ppmp,
+}: EditProps) {
     const office = ppmp.office;
-    const coordinator = ppmp.coordinator;
+    const coordinator =
+        ppmp.coordinator;
 
-    const currentFiscalYear = new Date().getFullYear();
+    const currentFiscalYear =
+        new Date().getFullYear();
 
-    const breadcrumbs: BreadcrumbItem[] = [
+    const breadcrumbs:
+        BreadcrumbItem[] = [
         {
             title: 'Dashboard',
             href: '/dashboard',
@@ -179,85 +240,121 @@ export default function EditPpmp({ ppmp }: EditProps) {
         put,
         processing,
         errors,
-    } = useForm<PpmpFormData>({
-        fiscal_year: ppmp.fiscal_year,
+    } =
+        useForm<PpmpFormData>({
+            fiscal_year:
+                ppmp.fiscal_year,
 
-        plan_type: ppmp.plan_type,
+            plan_type:
+                ppmp.plan_type,
 
-        prepared_by_name:
-            ppmp.prepared_by_name ?? '',
+            prepared_by_name:
+                ppmp.prepared_by_name ??
+                '',
 
-        prepared_by_position:
-            ppmp.prepared_by_position ?? '',
+            prepared_by_position:
+                ppmp.prepared_by_position ??
+                '',
 
-        submitted_by_name:
-            ppmp.submitted_by_name ?? '',
+            submitted_by_name:
+                ppmp.submitted_by_name ??
+                '',
 
-        submitted_by_position:
-            ppmp.submitted_by_position ?? '',
+            submitted_by_position:
+                ppmp.submitted_by_position ??
+                '',
 
-        items: ppmp.items.map(
-            (item): PpmpItemForm => ({
-                ...item,
+            items:
+                ppmp.items.map(
+                    (
+                        item,
+                    ): PpmpItemForm => ({
+                        ...item,
 
-                estimated_budget: String(
-                    item.estimated_budget,
+                        estimated_budget:
+                            String(
+                                item.estimated_budget,
+                            ),
+                    }),
                 ),
-            }),
-        ),
-    });
+        });
 
-    const totalBudget = useMemo(() => {
-        return data.items.reduce(
-            (total, item) => {
-                const amount =
-                    Number(
-                        item.estimated_budget.replace(
-                            /,/g,
-                            '',
-                        ),
-                    ) || 0;
+    const totalBudget =
+        useMemo(() => {
+            return data.items.reduce(
+                (
+                    total,
+                    item,
+                ) => {
+                    const amount =
+                        Number(
+                            item.estimated_budget.replace(
+                                /,/g,
+                                '',
+                            ),
+                        ) || 0;
 
-                return total + amount;
-            },
-            0,
-        );
-    }, [data.items]);
+                    return (
+                        total +
+                        amount
+                    );
+                },
+                0,
+            );
+        }, [data.items]);
 
     function addItem() {
-        setData('items', [
-            ...data.items,
-            createEmptyItem(),
-        ]);
+        setData(
+            'items',
+            [
+                ...data.items,
+                createEmptyItem(),
+            ],
+        );
     }
 
-    function removeItem(index: number) {
-        if (data.items.length === 1) {
+    function removeItem(
+        index: number,
+    ) {
+        if (
+            data.items.length ===
+            1
+        ) {
             return;
         }
 
         setData(
             'items',
             data.items.filter(
-                (_, itemIndex) =>
-                    itemIndex !== index,
+                (
+                    _,
+                    itemIndex,
+                ) =>
+                    itemIndex !==
+                    index,
             ),
         );
     }
 
-    function updateItem<K extends ItemField>(
+    function updateItem<
+        K extends ItemField,
+    >(
         index: number,
         field: K,
         value: PpmpItemForm[K],
     ) {
-        const items = [...data.items];
+        const items =
+            [...data.items];
 
         items[index] = {
             ...items[index],
             [field]: value,
         };
 
-        setData('items', items);
+        setData(
+            'items',
+            items,
+        );
     }
 
     function errorFor(
@@ -271,65 +368,126 @@ export default function EditPpmp({ ppmp }: EditProps) {
         )[key];
     }
 
-    const submit: FormEventHandler<HTMLFormElement> = (
-        event,
-    ) => {
-        event.preventDefault();
+    const submit:
+        FormEventHandler<HTMLFormElement> =
+        (event) => {
+            event.preventDefault();
 
-        put(`/ppmps/${ppmp.id}`, {
-            preserveScroll: true,
-        });
-    };
+            put(
+                `/ppmps/${ppmp.id}`,
+                {
+                    preserveScroll:
+                        true,
+                },
+            );
+        };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={`Edit ${ppmp.ppmp_no}`} />
+        <AppLayout
+            breadcrumbs={
+                breadcrumbs
+            }
+        >
+            <Head
+                title={`Edit ${ppmp.ppmp_no}`}
+            />
 
             <form
                 onSubmit={submit}
-                className="flex flex-1 flex-col gap-6 p-4"
+                className="pms-page"
             >
                 {/* PAGE HEADER */}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold">
-                            Edit PPMP
-                        </h1>
+                <PageHeader
+                    eyebrow="Procurement Planning"
+                    title="Edit PPMP"
+                    description={`Update procurement information and project details for ${ppmp.ppmp_no}.`}
+                    icon={FileText}
+                    actions={
+                        <div className="border-l-2 border-primary pl-4 text-right">
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                                Total
+                                Budget
+                            </div>
 
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Update the procurement items and
-                            information for this PPMP.
-                        </p>
-                    </div>
+                            <div className="mt-1 text-xl font-semibold tabular-nums text-primary">
+                                {formatCurrency(
+                                    totalBudget,
+                                )}
+                            </div>
+                        </div>
+                    }
+                />
 
-                    <div className="text-left sm:text-right">
-                        <div className="text-sm text-muted-foreground">
-                            Total Budget
+                {/* PPMP REFERENCE */}
+                <section className="border-b border-border bg-secondary/30 px-5 py-3 md:px-6">
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                            <div className="pms-readonly-label">
+                                PPMP No.
+                            </div>
+
+                            <div className="mt-1 text-sm font-semibold">
+                                {
+                                    ppmp.ppmp_no
+                                }
+                            </div>
                         </div>
 
-                        <div className="text-2xl font-bold">
-                            {formatCurrency(totalBudget)}
+                        <div>
+                            <div className="pms-readonly-label">
+                                End-User
+                                Unit
+                            </div>
+
+                            <div className="mt-1 text-sm font-semibold">
+                                {
+                                    office.code
+                                }
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="pms-readonly-label">
+                                Coordinator
+                            </div>
+
+                            <div className="mt-1 text-sm font-semibold">
+                                {
+                                    coordinator.name
+                                }
+                            </div>
+                        </div>
+
+                        <div>
+                            <div className="pms-readonly-label">
+                                Current
+                                Item Count
+                            </div>
+
+                            <div className="mt-1 text-sm font-semibold tabular-nums">
+                                {
+                                    data
+                                        .items
+                                        .length
+                                }
+                            </div>
                         </div>
                     </div>
-                </div>
+                </section>
 
                 {/* PPMP INFORMATION */}
-                <section className="rounded-xl border bg-background p-5">
-                    <div className="mb-5">
-                        <h2 className="text-lg font-semibold">
-                            PPMP Information
-                        </h2>
-
-                        <p className="text-sm text-muted-foreground">
-                            PPMP No.: {ppmp.ppmp_no}
-                        </p>
-                    </div>
-
+                <SectionCard
+                    title="PPMP Information"
+                    description="Update the fiscal year and PPMP classification. Office and coordinator information are controlled by the system."
+                >
                     <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-                        {/* Fiscal Year */}
-                        <div className="grid gap-2">
-                            <Label htmlFor="fiscal_year">
-                                Fiscal Year
+                        {/* FISCAL YEAR */}
+                        <div className="pms-field">
+                            <Label
+                                htmlFor="fiscal_year"
+                            >
+                                Fiscal
+                                Year
                             </Label>
 
                             <Input
@@ -337,16 +495,20 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                 type="number"
                                 min="2020"
                                 max={
-                                    currentFiscalYear + 5
+                                    currentFiscalYear +
+                                    5
                                 }
                                 value={
                                     data.fiscal_year
                                 }
-                                onChange={(event) =>
+                                onChange={(
+                                    event,
+                                ) =>
                                     setData(
                                         'fiscal_year',
                                         Number(
-                                            event.target
+                                            event
+                                                .target
                                                 .value,
                                         ),
                                     )
@@ -361,22 +523,30 @@ export default function EditPpmp({ ppmp }: EditProps) {
                             />
                         </div>
 
-                        {/* PPMP Type */}
-                        <div className="grid gap-2">
-                            <Label htmlFor="plan_type">
+                        {/* TYPE */}
+                        <div className="pms-field">
+                            <Label
+                                htmlFor="plan_type"
+                            >
                                 PPMP Type
                             </Label>
 
                             <select
                                 id="plan_type"
-                                value={data.plan_type}
-                                onChange={(event) =>
+                                value={
+                                    data.plan_type
+                                }
+                                onChange={(
+                                    event,
+                                ) =>
                                     setData(
                                         'plan_type',
-                                        event.target.value,
+                                        event
+                                            .target
+                                            .value,
                                     )
                                 }
-                                className="h-9 rounded-md border bg-background px-3 text-sm"
+                                className="h-9 border border-input bg-background px-3 text-sm"
                             >
                                 <option value="indicative">
                                     Indicative
@@ -394,132 +564,156 @@ export default function EditPpmp({ ppmp }: EditProps) {
                             />
                         </div>
 
-                        {/* Office */}
-                        <div className="grid gap-2">
+                        {/* OFFICE */}
+                        <div className="pms-field">
                             <Label>
                                 End-User /
-                                Implementing Unit
+                                Implementing
+                                Unit
                             </Label>
 
-                            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                                <div className="font-medium">
-                                    {office.code}
+                            <div className="pms-readonly">
+                                <div className="pms-readonly-value">
+                                    {
+                                        office.code
+                                    }
                                 </div>
 
-                                <div className="text-xs text-muted-foreground">
-                                    {office.name}
+                                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                    {
+                                        office.name
+                                    }
                                 </div>
                             </div>
                         </div>
 
-                        {/* Coordinator */}
-                        <div className="grid gap-2">
+                        {/* COORDINATOR */}
+                        <div className="pms-field">
                             <Label>
-                                PPMP Coordinator
+                                PPMP
+                                Coordinator
                             </Label>
 
-                            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                                <div className="font-medium">
-                                    {coordinator.name}
+                            <div className="pms-readonly">
+                                <div className="pms-readonly-value">
+                                    {
+                                        coordinator.name
+                                    }
                                 </div>
 
-                                <div className="text-xs text-muted-foreground">
+                                <div className="mt-1 text-xs text-muted-foreground">
                                     {coordinator.position_title ??
                                         'No position title'}
                                 </div>
                             </div>
                         </div>
                     </div>
-                </section>
+                </SectionCard>
 
-                {/* PROCUREMENT ITEMS */}
-                <section className="overflow-hidden rounded-xl border bg-background">
-                    <div className="flex flex-col gap-3 border-b p-5 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 className="text-lg font-semibold">
-                                Procurement Project Details
-                            </h2>
-
-                            <p className="text-sm text-muted-foreground">
-                                Update, add, or remove
-                                procurement items included in
-                                this PPMP.
-                            </p>
-                        </div>
-
+                {/* PROCUREMENT PROJECT DETAILS */}
+                <SectionCard
+                    title="Procurement Project Details"
+                    description="Update, add, or remove procurement projects included in this PPMP."
+                    actions={
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={addItem}
+                            onClick={
+                                addItem
+                            }
                         >
-                            + Add Item
+                            <Plus className="size-4" />
+
+                            Add Item
                         </Button>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="min-w-[2350px] text-sm">
-                            <thead className="border-b bg-muted/50">
+                    }
+                    contentClassName="p-0"
+                >
+                    <DataTableShell>
+                        <table className="pms-table min-w-[2400px]">
+                            <thead>
                                 <tr>
-                                    <th className="w-[280px] px-3 py-3 text-left">
-                                        1. General Description
-                                        and Objective
+                                    <th className="w-[280px]">
+                                        1.
+                                        General
+                                        Description
+                                        and
+                                        Objective
                                     </th>
 
-                                    <th className="w-[190px] px-3 py-3 text-left">
-                                        2. Project Type
+                                    <th className="w-[190px]">
+                                        2.
+                                        Project
+                                        Type
                                     </th>
 
-                                    <th className="w-[200px] px-3 py-3 text-left">
-                                        3. Quantity and Size
+                                    <th className="w-[200px]">
+                                        3.
+                                        Quantity
+                                        and Size
                                     </th>
 
-                                    <th className="w-[220px] px-3 py-3 text-left">
-                                        4. Recommended Mode
+                                    <th className="w-[220px]">
+                                        4.
+                                        Recommended
+                                        Mode
                                     </th>
 
-                                    <th className="w-[160px] px-3 py-3 text-left">
-                                        5. Pre-Procurement
+                                    <th className="w-[160px]">
+                                        5.
+                                        Pre-
+                                        Procurement
                                         Conference
                                     </th>
 
-                                    <th className="w-[160px] px-3 py-3 text-left">
+                                    <th className="w-[160px]">
                                         6. Start
                                     </th>
 
-                                    <th className="w-[160px] px-3 py-3 text-left">
+                                    <th className="w-[160px]">
                                         7. End
                                     </th>
 
-                                    <th className="w-[170px] px-3 py-3 text-left">
-                                        8. Expected Delivery
+                                    <th className="w-[170px]">
+                                        8.
+                                        Expected
+                                        Delivery
                                     </th>
 
-                                    <th className="w-[190px] px-3 py-3 text-left">
-                                        9. Source of Funds
+                                    <th className="w-[190px]">
+                                        9. Source
+                                        of Funds
                                     </th>
 
-                                    <th className="w-[190px] px-3 py-3 text-right">
-                                        10. Estimated Budget
+                                    <th className="w-[190px] text-right">
+                                        10.
+                                        Estimated
+                                        Budget
                                     </th>
 
-                                    <th className="w-[190px] px-3 py-3 text-left">
-                                        11. Supporting
+                                    <th className="w-[220px]">
+                                        11.
+                                        Supporting
                                         Documents
                                     </th>
 
-                                    <th className="w-[230px] px-3 py-3 text-left">
-                                        12. Remarks
+                                    <th className="w-[230px]">
+                                        12.
+                                        Remarks
                                     </th>
 
-                                    <th className="w-[90px] px-3 py-3 text-center">
+                                    <th className="w-[100px] text-center">
                                         Action
                                     </th>
                                 </tr>
                             </thead>
 
-                            <tbody className="divide-y">
+                            <tbody>
                                 {data.items.map(
-                                    (item, index) => (
+                                    (
+                                        item,
+                                        index,
+                                    ) => (
                                         <tr
                                             key={
                                                 item.id ??
@@ -527,8 +721,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                             }
                                             className="align-top"
                                         >
-                                            {/* Description */}
-                                            <td className="p-2">
+                                            {/* DESCRIPTION */}
+                                            <td>
                                                 <textarea
                                                     value={
                                                         item.description_objective
@@ -544,7 +738,9 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                                 .value,
                                                         )
                                                     }
-                                                    rows={4}
+                                                    rows={
+                                                        4
+                                                    }
                                                     className={
                                                         inputClass
                                                     }
@@ -557,8 +753,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Project Type */}
-                                            <td className="p-2">
+                                            {/* PROJECT TYPE */}
+                                            <td>
                                                 <select
                                                     value={
                                                         item.project_type
@@ -608,8 +804,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Quantity */}
-                                            <td className="p-2">
+                                            {/* QUANTITY */}
+                                            <td>
                                                 <textarea
                                                     value={
                                                         item.quantity_size
@@ -625,7 +821,9 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                                 .value,
                                                         )
                                                     }
-                                                    rows={4}
+                                                    rows={
+                                                        4
+                                                    }
                                                     placeholder="e.g. 10 units"
                                                     className={
                                                         inputClass
@@ -639,8 +837,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Mode */}
-                                            <td className="p-2">
+                                            {/* MODE */}
+                                            <td>
                                                 <Input
                                                     value={
                                                         item.recommended_mode_of_procurement
@@ -666,8 +864,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Pre-procurement */}
-                                            <td className="p-2">
+                                            {/* PRE-PROCUREMENT */}
+                                            <td>
                                                 <select
                                                     value={
                                                         item.pre_procurement_conference
@@ -706,8 +904,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Start */}
-                                            <td className="p-2">
+                                            {/* START */}
+                                            <td>
                                                 <Input
                                                     type="month"
                                                     value={
@@ -733,8 +931,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* End */}
-                                            <td className="p-2">
+                                            {/* END */}
+                                            <td>
                                                 <Input
                                                     type="month"
                                                     value={
@@ -760,8 +958,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Delivery */}
-                                            <td className="p-2">
+                                            {/* DELIVERY */}
+                                            <td>
                                                 <Input
                                                     type="month"
                                                     value={
@@ -787,8 +985,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Source of Funds */}
-                                            <td className="p-2">
+                                            {/* FUNDS */}
+                                            <td>
                                                 <Input
                                                     value={
                                                         item.source_of_funds
@@ -814,39 +1012,45 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Estimated Budget */}
-                                            <td className="p-2">
-                                                <Input
-                                                    type="text"
-                                                    inputMode="decimal"
-                                                    className="text-right"
-                                                    value={formatBudgetInput(
-                                                        item.estimated_budget,
-                                                    )}
-                                                    onChange={(
-                                                        event,
-                                                    ) =>
-                                                        updateItem(
-                                                            index,
-                                                            'estimated_budget',
-                                                            sanitizeBudgetInput(
-                                                                event
-                                                                    .target
-                                                                    .value,
-                                                            ),
-                                                        )
-                                                    }
-                                                    onBlur={() =>
-                                                        updateItem(
-                                                            index,
-                                                            'estimated_budget',
-                                                            normalizeBudgetInput(
-                                                                item.estimated_budget,
-                                                            ),
-                                                        )
-                                                    }
-                                                    placeholder="0.00"
-                                                />
+                                            {/* BUDGET */}
+                                            <td>
+                                                <div className="relative">
+                                                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                                                        ₱
+                                                    </span>
+
+                                                    <Input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        className="pl-7 text-right"
+                                                        value={formatBudgetInput(
+                                                            item.estimated_budget,
+                                                        )}
+                                                        onChange={(
+                                                            event,
+                                                        ) =>
+                                                            updateItem(
+                                                                index,
+                                                                'estimated_budget',
+                                                                sanitizeBudgetInput(
+                                                                    event
+                                                                        .target
+                                                                        .value,
+                                                                ),
+                                                            )
+                                                        }
+                                                        onBlur={() =>
+                                                            updateItem(
+                                                                index,
+                                                                'estimated_budget',
+                                                                normalizeBudgetInput(
+                                                                    item.estimated_budget,
+                                                                ),
+                                                            )
+                                                        }
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
 
                                                 <InputError
                                                     message={errorFor(
@@ -855,21 +1059,24 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Supporting Documents */}
-                                            <td className="p-2">
+                                            {/* DOCUMENTS */}
+                                            <td>
                                                 {item.id ? (
-                                                    <div className="rounded-md border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
+                                                    <div className="border border-dashed border-border bg-secondary/20 p-3 text-xs leading-5 text-muted-foreground">
                                                         Supporting
-                                                        documents for
-                                                        this item can
-                                                        now be managed
-                                                        from the PPMP
-                                                        details page.
+                                                        documents
+                                                        for this
+                                                        item are
+                                                        managed
+                                                        from the
+                                                        PPMP
+                                                        details
+                                                        page.
                                                     </div>
                                                 ) : (
-                                                    <div className="rounded-md border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
-                                                        Save this new
-                                                        item first
+                                                    <div className="border border-dashed border-border bg-secondary/20 p-3 text-xs leading-5 text-muted-foreground">
+                                                        Save this
+                                                        new item
                                                         before
                                                         uploading
                                                         supporting
@@ -878,8 +1085,8 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 )}
                                             </td>
 
-                                            {/* Remarks */}
-                                            <td className="p-2">
+                                            {/* REMARKS */}
+                                            <td>
                                                 <textarea
                                                     value={
                                                         item.remarks
@@ -895,7 +1102,9 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                                 .value,
                                                         )
                                                     }
-                                                    rows={4}
+                                                    rows={
+                                                        4
+                                                    }
                                                     className={
                                                         inputClass
                                                     }
@@ -908,209 +1117,273 @@ export default function EditPpmp({ ppmp }: EditProps) {
                                                 />
                                             </td>
 
-                                            {/* Remove */}
-                                            <td className="p-2 text-center">
-                                                <button
+                                            {/* REMOVE */}
+                                            <td className="text-center">
+                                                <Button
                                                     type="button"
+                                                    variant="outline"
+                                                    size="sm"
                                                     disabled={
-                                                        data.items.length === 1
+                                                        data
+                                                            .items
+                                                            .length ===
+                                                        1
                                                     }
                                                     onClick={() =>
                                                         removeItem(
                                                             index,
                                                         )
                                                     }
-                                                    className="rounded-md border px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                                                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
                                                 >
                                                     Remove
-                                                </button>
+                                                </Button>
                                             </td>
                                         </tr>
                                     ),
                                 )}
                             </tbody>
 
-                            <tfoot className="border-t bg-muted/30">
+                            <tfoot className="pms-total-row">
                                 <tr>
                                     <td
-                                        colSpan={9}
-                                        className="px-4 py-4 text-right font-semibold"
+                                        colSpan={
+                                            9
+                                        }
+                                        className="text-right font-semibold"
                                     >
-                                        TOTAL BUDGET
+                                        TOTAL
+                                        BUDGET
                                     </td>
 
-                                    <td className="px-4 py-4 text-right text-base font-bold">
+                                    <td className="whitespace-nowrap text-right text-base font-semibold tabular-nums text-primary">
                                         {formatCurrency(
                                             totalBudget,
                                         )}
                                     </td>
 
-                                    <td colSpan={3} />
+                                    <td
+                                        colSpan={
+                                            3
+                                        }
+                                    />
                                 </tr>
                             </tfoot>
                         </table>
-                    </div>
-                </section>
+                    </DataTableShell>
+                </SectionCard>
 
-                {/* SIGNATURE INFORMATION */}
-                <section className="rounded-xl border bg-background p-5">
-                    <h2 className="mb-5 text-lg font-semibold">
-                        Prepared and Submitted By
-                    </h2>
-
-                    <div className="grid gap-5 md:grid-cols-2">
-                        {/* Prepared By */}
-                        <div className="space-y-4 rounded-lg border p-4">
-                            <h3 className="font-medium">
+                {/* SIGNATORIES */}
+                <SectionCard
+                    title="Prepared and Submitted By"
+                    description="Update the signatory information that will appear on the official PPMP."
+                    contentClassName="p-0"
+                >
+                    <div className="grid md:grid-cols-2">
+                        {/* PREPARED BY */}
+                        <div className="border-b border-border px-5 py-5 md:border-b-0 md:border-r md:px-6">
+                            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-primary">
                                 Prepared By
-                            </h3>
-
-                            <div className="grid gap-2">
-                                <Label>Name</Label>
-
-                                <Input
-                                    value={
-                                        data.prepared_by_name
-                                    }
-                                    onChange={(event) =>
-                                        setData(
-                                            'prepared_by_name',
-                                            event.target
-                                                .value,
-                                        )
-                                    }
-                                />
-
-                                <InputError
-                                    message={
-                                        errors.prepared_by_name
-                                    }
-                                />
                             </div>
 
-                            <div className="grid gap-2">
-                                <Label>
-                                    Position /
-                                    Designation
-                                </Label>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                PPMP
+                                Coordinator
+                                or designated
+                                preparer.
+                            </p>
 
-                                <Input
-                                    value={
-                                        data.prepared_by_position
-                                    }
-                                    onChange={(event) =>
-                                        setData(
-                                            'prepared_by_position',
-                                            event.target
-                                                .value,
-                                        )
-                                    }
-                                />
+                            <div className="mt-5 grid gap-4">
+                                <div className="pms-field">
+                                    <Label
+                                        htmlFor="prepared_by_name"
+                                    >
+                                        Name
+                                    </Label>
 
-                                <InputError
-                                    message={
-                                        errors.prepared_by_position
-                                    }
-                                />
+                                    <Input
+                                        id="prepared_by_name"
+                                        value={
+                                            data.prepared_by_name
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            setData(
+                                                'prepared_by_name',
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                    />
+
+                                    <InputError
+                                        message={
+                                            errors.prepared_by_name
+                                        }
+                                    />
+                                </div>
+
+                                <div className="pms-field">
+                                    <Label
+                                        htmlFor="prepared_by_position"
+                                    >
+                                        Position /
+                                        Designation
+                                    </Label>
+
+                                    <Input
+                                        id="prepared_by_position"
+                                        value={
+                                            data.prepared_by_position
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            setData(
+                                                'prepared_by_position',
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                    />
+
+                                    <InputError
+                                        message={
+                                            errors.prepared_by_position
+                                        }
+                                    />
+                                </div>
                             </div>
                         </div>
 
-                        {/* Submitted By */}
-                        <div className="space-y-4 rounded-lg border p-4">
-                            <h3 className="font-medium">
+                        {/* SUBMITTED BY */}
+                        <div className="px-5 py-5 md:px-6">
+                            <div className="text-xs font-semibold uppercase tracking-[0.08em] text-primary">
                                 Submitted By
-                            </h3>
-
-                            <div className="grid gap-2">
-                                <Label>
-                                    Division Chief / Head
-                                </Label>
-
-                                <Input
-                                    value={
-                                        data.submitted_by_name
-                                    }
-                                    onChange={(event) =>
-                                        setData(
-                                            'submitted_by_name',
-                                            event.target
-                                                .value,
-                                        )
-                                    }
-                                    placeholder="Name of Division Chief"
-                                />
-
-                                <InputError
-                                    message={
-                                        errors.submitted_by_name
-                                    }
-                                />
                             </div>
 
-                            <div className="grid gap-2">
-                                <Label>
-                                    Position /
-                                    Designation
-                                </Label>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                Division
+                                Chief or
+                                Head of the
+                                End-User
+                                Unit.
+                            </p>
 
-                                <Input
-                                    value={
-                                        data.submitted_by_position
-                                    }
-                                    onChange={(event) =>
-                                        setData(
-                                            'submitted_by_position',
-                                            event.target
-                                                .value,
-                                        )
-                                    }
-                                />
+                            <div className="mt-5 grid gap-4">
+                                <div className="pms-field">
+                                    <Label
+                                        htmlFor="submitted_by_name"
+                                    >
+                                        Division
+                                        Chief /
+                                        Head
+                                    </Label>
 
-                                <InputError
-                                    message={
-                                        errors.submitted_by_position
-                                    }
-                                />
+                                    <Input
+                                        id="submitted_by_name"
+                                        value={
+                                            data.submitted_by_name
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            setData(
+                                                'submitted_by_name',
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                        placeholder="Name of Division Chief"
+                                    />
+
+                                    <InputError
+                                        message={
+                                            errors.submitted_by_name
+                                        }
+                                    />
+                                </div>
+
+                                <div className="pms-field">
+                                    <Label
+                                        htmlFor="submitted_by_position"
+                                    >
+                                        Position /
+                                        Designation
+                                    </Label>
+
+                                    <Input
+                                        id="submitted_by_position"
+                                        value={
+                                            data.submitted_by_position
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            setData(
+                                                'submitted_by_position',
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                    />
+
+                                    <InputError
+                                        message={
+                                            errors.submitted_by_position
+                                        }
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
-                </section>
+                </SectionCard>
 
-                {/* BOTTOM ACTION BAR */}
-                <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t bg-background/95 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-sm">
-                        <span className="text-muted-foreground">
-                            Total PPMP Budget:{' '}
-                        </span>
+                {/* ACTION BAR */}
+                <ActionBar
+                    left={
+                        <div>
+                            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                Total PPMP
+                                Budget
+                            </span>
 
-                        <span className="font-bold">
-                            {formatCurrency(totalBudget)}
-                        </span>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            asChild
+                            <span className="ml-3 font-semibold tabular-nums text-primary">
+                                {formatCurrency(
+                                    totalBudget,
+                                )}
+                            </span>
+                        </div>
+                    }
+                >
+                    <Button
+                        type="button"
+                        variant="outline"
+                        asChild
+                    >
+                        <Link
+                            href={`/ppmps/${ppmp.id}`}
                         >
-                            <Link
-                                href={`/ppmps/${ppmp.id}`}
-                            >
-                                Cancel
-                            </Link>
-                        </Button>
+                            Cancel
+                        </Link>
+                    </Button>
 
-                        <Button
-                            type="submit"
-                            disabled={processing}
-                        >
-                            {processing
-                                ? 'Saving Changes...'
-                                : 'Save Changes'}
-                        </Button>
-                    </div>
-                </div>
+                    <Button
+                        type="submit"
+                        disabled={
+                            processing
+                        }
+                    >
+                        {processing
+                            ? 'Saving Changes...'
+                            : 'Save Changes'}
+                    </Button>
+                </ActionBar>
             </form>
         </AppLayout>
     );

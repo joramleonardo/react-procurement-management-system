@@ -1,3 +1,8 @@
+import { DataTableShell } from '@/components/pms/data-table-shell';
+import { EmptyState } from '@/components/pms/empty-state';
+import { PageHeader } from '@/components/pms/page-header';
+import { StatusBadge } from '@/components/pms/status-badge';
+import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import {
@@ -5,6 +10,11 @@ import {
     Link,
     router,
 } from '@inertiajs/react';
+import {
+    ClipboardList,
+    Plus,
+    Search,
+} from 'lucide-react';
 import {
     FormEvent,
     useState,
@@ -88,44 +98,10 @@ function formatCurrency(
         {
             style: 'currency',
             currency: 'PHP',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
         },
     ).format(Number(value));
-}
-
-function formatStatus(
-    status: string,
-): string {
-    switch (status) {
-        case 'submitted':
-            return 'Submitted for Review';
-
-        case 'returned_for_revision':
-            return 'Returned for Revision';
-
-        case 'approved':
-            return 'Approved';
-
-        default:
-            return 'Draft';
-    }
-}
-
-function statusClasses(
-    status: string,
-): string {
-    switch (status) {
-        case 'approved':
-            return 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300';
-
-        case 'submitted':
-            return 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300';
-
-        case 'returned_for_revision':
-            return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300';
-
-        default:
-            return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
-    }
 }
 
 export default function PpmpIndex({
@@ -135,13 +111,18 @@ export default function PpmpIndex({
     can,
     flash,
 }: IndexProps) {
-    const [search, setSearch] = useState(
-        filters.search ?? '',
-    );
-
-    const [fiscalYear, setFiscalYear] =
+    const [search, setSearch] =
         useState(
-            filters.fiscal_year ?? '',
+            filters.search ?? '',
+        );
+
+    const [
+        fiscalYear,
+        setFiscalYear,
+    ] =
+        useState(
+            filters.fiscal_year ??
+                '',
         );
 
     const [status, setStatus] =
@@ -149,7 +130,10 @@ export default function PpmpIndex({
             filters.status ?? '',
         );
 
-    const [planType, setPlanType] =
+    const [
+        planType,
+        setPlanType,
+    ] =
         useState(
             filters.plan_type ?? '',
         );
@@ -163,12 +147,15 @@ export default function PpmpIndex({
             '/ppmps',
             {
                 search,
-                fiscal_year: fiscalYear,
+                fiscal_year:
+                    fiscalYear,
                 status,
-                plan_type: planType,
+                plan_type:
+                    planType,
             },
             {
-                preserveState: true,
+                preserveState:
+                    true,
                 replace: true,
             },
         );
@@ -191,363 +178,530 @@ export default function PpmpIndex({
 
     return (
         <AppLayout
-            breadcrumbs={breadcrumbs}
+            breadcrumbs={
+                breadcrumbs
+            }
         >
             <Head title="PPMP" />
 
-            <div className="flex flex-1 flex-col gap-5 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold">
-                            Project Procurement
-                            Management Plans
-                        </h1>
+            <div className="pms-page">
+                {/* PAGE HEADER */}
+                <PageHeader
+                    eyebrow="Procurement Planning"
+                    title="Project Procurement Management Plans"
+                    description="Create, review, and monitor procurement plans for your division."
+                    icon={
+                        ClipboardList
+                    }
+                    actions={
+                        can.create ? (
+                            <Button
+                                asChild
+                            >
+                                <Link href="/ppmps/create">
+                                    <Plus className="size-4" />
 
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Create and monitor PPMPs
-                            for each implementing
-                            division.
-                        </p>
-                    </div>
+                                    Create PPMP
+                                </Link>
+                            </Button>
+                        ) : null
+                    }
+                />
 
-                    {can.create && (
-                        <Link
-                            href="/ppmps/create"
-                            className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                        >
-                            + Create PPMP
-                        </Link>
-                    )}
-                </div>
-
+                {/* SUCCESS MESSAGE */}
                 {flash.success && (
-                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
-                        {flash.success}
+                    <div className="border-b border-green-200 bg-green-50 px-5 py-3 text-sm text-green-800 md:px-6 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200">
+                        {
+                            flash.success
+                        }
                     </div>
                 )}
 
+                {/* FILTER BAR */}
                 <form
-                    onSubmit={submitFilters}
-                    className="grid gap-3 rounded-xl border bg-background p-4 md:grid-cols-2 xl:grid-cols-[1fr_170px_200px_160px_auto_auto]"
+                    onSubmit={
+                        submitFilters
+                    }
+                    className="pms-filter-bar grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(320px,1fr)_170px_210px_160px_auto_auto]"
                 >
-                    <input
-                        type="search"
-                        value={search}
-                        onChange={(event) =>
-                            setSearch(
-                                event.target.value,
-                            )
-                        }
-                        placeholder="Search PPMP no., office, or coordinator"
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    />
+                    {/* SEARCH */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="search"
+                            className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                            Search
+                        </label>
 
-                    <select
-                        value={fiscalYear}
-                        onChange={(event) =>
-                            setFiscalYear(
-                                event.target.value,
-                            )
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    >
-                        <option value="">
-                            All fiscal years
-                        </option>
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 
-                        {fiscalYears.map(
-                            (year) => (
-                                <option
-                                    key={year}
-                                    value={year}
-                                >
-                                    {year}
-                                </option>
-                            ),
-                        )}
-                    </select>
+                            <input
+                                id="search"
+                                type="search"
+                                value={
+                                    search
+                                }
+                                onChange={(
+                                    event,
+                                ) =>
+                                    setSearch(
+                                        event
+                                            .target
+                                            .value,
+                                    )
+                                }
+                                placeholder="PPMP no., office, or coordinator"
+                                className="h-10 w-full border border-input bg-background pl-9 pr-3 text-sm"
+                            />
+                        </div>
+                    </div>
 
-                    <select
-                        value={status}
-                        onChange={(event) =>
-                            setStatus(
-                                event.target.value,
-                            )
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    >
-                        <option value="">
-                            All statuses
-                        </option>
+                    {/* FISCAL YEAR */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="fiscal_year"
+                            className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                            Fiscal Year
+                        </label>
 
-                        <option value="draft">
-                            Draft
-                        </option>
+                        <select
+                            id="fiscal_year"
+                            value={
+                                fiscalYear
+                            }
+                            onChange={(
+                                event,
+                            ) =>
+                                setFiscalYear(
+                                    event
+                                        .target
+                                        .value,
+                                )
+                            }
+                            className="h-10 w-full border border-input bg-background px-3 text-sm"
+                        >
+                            <option value="">
+                                All fiscal
+                                years
+                            </option>
 
-                        <option value="submitted">
-                            Submitted for Review
-                        </option>
+                            {fiscalYears.map(
+                                (
+                                    year,
+                                ) => (
+                                    <option
+                                        key={
+                                            year
+                                        }
+                                        value={
+                                            year
+                                        }
+                                    >
+                                        {
+                                            year
+                                        }
+                                    </option>
+                                ),
+                            )}
+                        </select>
+                    </div>
 
-                        <option value="returned_for_revision">
-                            Returned for Revision
-                        </option>
+                    {/* STATUS */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="status"
+                            className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                            Status
+                        </label>
 
-                        <option value="approved">
-                            Approved
-                        </option>
-                    </select>
+                        <select
+                            id="status"
+                            value={
+                                status
+                            }
+                            onChange={(
+                                event,
+                            ) =>
+                                setStatus(
+                                    event
+                                        .target
+                                        .value,
+                                )
+                            }
+                            className="h-10 w-full border border-input bg-background px-3 text-sm"
+                        >
+                            <option value="">
+                                All
+                                statuses
+                            </option>
 
-                    <select
-                        value={planType}
-                        onChange={(event) =>
-                            setPlanType(
-                                event.target.value,
-                            )
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    >
-                        <option value="">
-                            All types
-                        </option>
+                            <option value="draft">
+                                Draft
+                            </option>
 
-                        <option value="indicative">
-                            Indicative
-                        </option>
+                            <option value="submitted">
+                                Submitted
+                                for Review
+                            </option>
 
-                        <option value="final">
-                            Final
-                        </option>
-                    </select>
+                            <option value="returned_for_revision">
+                                Returned
+                                for
+                                Revision
+                            </option>
 
-                    <button
-                        type="submit"
-                        className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
-                    >
-                        Apply
-                    </button>
+                            <option value="approved">
+                                Approved
+                            </option>
+                        </select>
+                    </div>
 
-                    <button
-                        type="button"
-                        onClick={resetFilters}
-                        className="h-10 rounded-md border px-4 text-sm font-medium hover:bg-muted"
-                    >
-                        Reset
-                    </button>
+                    {/* TYPE */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="plan_type"
+                            className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+                        >
+                            PPMP Type
+                        </label>
+
+                        <select
+                            id="plan_type"
+                            value={
+                                planType
+                            }
+                            onChange={(
+                                event,
+                            ) =>
+                                setPlanType(
+                                    event
+                                        .target
+                                        .value,
+                                )
+                            }
+                            className="h-10 w-full border border-input bg-background px-3 text-sm"
+                        >
+                            <option value="">
+                                All types
+                            </option>
+
+                            <option value="indicative">
+                                Indicative
+                            </option>
+
+                            <option value="final">
+                                Final
+                            </option>
+                        </select>
+                    </div>
+
+                    {/* APPLY */}
+                    <div className="flex items-end">
+                        <Button
+                            type="submit"
+                            className="w-full xl:w-auto"
+                        >
+                            Apply Filters
+                        </Button>
+                    </div>
+
+                    {/* RESET */}
+                    <div className="flex items-end">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={
+                                resetFilters
+                            }
+                            className="w-full xl:w-auto"
+                        >
+                            Clear Filters
+                        </Button>
+                    </div>
                 </form>
 
-                <div className="overflow-hidden rounded-xl border bg-background">
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1050px] text-sm">
-                            <thead className="border-b bg-muted/50">
-                                <tr>
-                                    <th className="px-4 py-3 text-left">
-                                        PPMP No.
-                                    </th>
+                {/* TABLE */}
+                <DataTableShell
+                    footer={
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="text-sm text-muted-foreground">
+                                Showing{' '}
+                                <span className="font-medium text-foreground">
+                                    {ppmps.from ??
+                                        0}
+                                </span>{' '}
+                                to{' '}
+                                <span className="font-medium text-foreground">
+                                    {ppmps.to ??
+                                        0}
+                                </span>{' '}
+                                of{' '}
+                                <span className="font-medium text-foreground">
+                                    {
+                                        ppmps.total
+                                    }
+                                </span>{' '}
+                                PPMP records
+                            </div>
 
-                                    <th className="px-4 py-3 text-left">
-                                        Fiscal Year
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        End-User Unit
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Coordinator
-                                    </th>
-
-                                    <th className="px-4 py-3 text-center">
-                                        Items
-                                    </th>
-
-                                    <th className="px-4 py-3 text-right">
-                                        Total Budget
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Status
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Updated
-                                    </th>
-
-                                    <th className="px-4 py-3 text-right">
-                                        Actions
-                                    </th>
-                                </tr>
-                            </thead>
-
-                            <tbody className="divide-y">
-                                {ppmps.data.length ===
-                                0 ? (
-                                    <tr>
-                                        <td
-                                            colSpan={9}
-                                            className="px-4 py-12 text-center text-muted-foreground"
-                                        >
-                                            No PPMP records
-                                            found.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    ppmps.data.map(
-                                        (ppmp) => (
-                                            <tr
+                            <div className="flex flex-wrap gap-1">
+                                {ppmps.links.map(
+                                    (
+                                        link,
+                                        index,
+                                    ) =>
+                                        link.url ? (
+                                            <Link
                                                 key={
-                                                    ppmp.id
+                                                    index
                                                 }
-                                                className="hover:bg-muted/30"
-                                            >
-                                                <td className="px-4 py-4 font-medium">
+                                                href={
+                                                    link.url
+                                                }
+                                                preserveState
+                                                className={`inline-flex min-h-8 items-center border px-3 text-xs font-medium transition-colors ${
+                                                    link.active
+                                                        ? 'border-primary bg-primary text-primary-foreground'
+                                                        : 'border-border bg-background hover:bg-secondary'
+                                                }`}
+                                                dangerouslySetInnerHTML={{
+                                                    __html:
+                                                        link.label,
+                                                }}
+                                            />
+                                        ) : (
+                                            <span
+                                                key={
+                                                    index
+                                                }
+                                                className="inline-flex min-h-8 items-center border border-border bg-secondary/30 px-3 text-xs text-muted-foreground opacity-50"
+                                                dangerouslySetInnerHTML={{
+                                                    __html:
+                                                        link.label,
+                                                }}
+                                            />
+                                        ),
+                                )}
+                            </div>
+                        </div>
+                    }
+                >
+                    <table className="pms-table min-w-[1180px]">
+                        <thead>
+                            <tr>
+                                <th className="w-[200px]">
+                                    PPMP No.
+                                </th>
+
+                                <th className="w-[110px]">
+                                    Fiscal Year
+                                </th>
+
+                                <th className="w-[280px]">
+                                    End-User Unit
+                                </th>
+
+                                <th className="w-[220px]">
+                                    Coordinator
+                                </th>
+
+                                <th className="w-[80px] text-center">
+                                    Items
+                                </th>
+
+                                <th className="w-[180px] text-right">
+                                    Total Budget
+                                </th>
+
+                                <th className="w-[190px]">
+                                    Status
+                                </th>
+
+                                <th className="w-[170px]">
+                                    Updated
+                                </th>
+
+                                <th className="w-[150px] text-right">
+                                    Actions
+                                </th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {ppmps.data.length ===
+                            0 ? (
+                                <tr>
+                                    <td
+                                        colSpan={
+                                            9
+                                        }
+                                        className="p-0!"
+                                    >
+                                        <EmptyState
+                                            icon={
+                                                ClipboardList
+                                            }
+                                            title="No PPMP records found"
+                                            description="Try changing your filters or create a new PPMP for your division."
+                                            action={
+                                                can.create ? (
+                                                    <Button
+                                                        asChild
+                                                    >
+                                                        <Link href="/ppmps/create">
+                                                            <Plus className="size-4" />
+
+                                                            Create
+                                                            PPMP
+                                                        </Link>
+                                                    </Button>
+                                                ) : undefined
+                                            }
+                                        />
+                                    </td>
+                                </tr>
+                            ) : (
+                                ppmps.data.map(
+                                    (
+                                        ppmp,
+                                    ) => (
+                                        <tr
+                                            key={
+                                                ppmp.id
+                                            }
+                                        >
+                                            {/* PPMP NUMBER */}
+                                            <td>
+                                                <Link
+                                                    href={`/ppmps/${ppmp.id}`}
+                                                    className="font-semibold text-foreground hover:text-primary hover:underline"
+                                                >
                                                     {
                                                         ppmp.ppmp_no
                                                     }
+                                                </Link>
 
-                                                    <div className="mt-1 text-xs capitalize text-muted-foreground">
-                                                        {
-                                                            ppmp.plan_type
-                                                        }
-                                                    </div>
-                                                </td>
-
-                                                <td className="px-4 py-4">
+                                                <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                                                     {
-                                                        ppmp.fiscal_year
+                                                        ppmp.plan_type
                                                     }
-                                                </td>
+                                                </div>
+                                            </td>
 
-                                                <td className="px-4 py-4">
-                                                    <div className="font-medium">
-                                                        {
-                                                            ppmp
-                                                                .office
-                                                                .code
-                                                        }
-                                                    </div>
+                                            {/* FISCAL YEAR */}
+                                            <td className="tabular-nums">
+                                                {
+                                                    ppmp.fiscal_year
+                                                }
+                                            </td>
 
-                                                    <div className="max-w-[250px] text-xs text-muted-foreground">
-                                                        {
-                                                            ppmp
-                                                                .office
-                                                                .name
-                                                        }
-                                                    </div>
-                                                </td>
+                                            {/* OFFICE */}
+                                            <td>
+                                                <div className="font-semibold">
+                                                    {
+                                                        ppmp
+                                                            .office
+                                                            .code
+                                                    }
+                                                </div>
 
-                                                <td className="px-4 py-4">
+                                                <div className="mt-1 max-w-[260px] text-xs leading-5 text-muted-foreground">
+                                                    {
+                                                        ppmp
+                                                            .office
+                                                            .name
+                                                    }
+                                                </div>
+                                            </td>
+
+                                            {/* COORDINATOR */}
+                                            <td>
+                                                <div className="font-medium">
                                                     {
                                                         ppmp
                                                             .coordinator
                                                             .name
                                                     }
-                                                </td>
+                                                </div>
+                                            </td>
 
-                                                <td className="px-4 py-4 text-center">
+                                            {/* ITEMS */}
+                                            <td className="text-center">
+                                                <span className="font-semibold tabular-nums">
                                                     {
                                                         ppmp.items_count
                                                     }
-                                                </td>
+                                                </span>
+                                            </td>
 
-                                                <td className="whitespace-nowrap px-4 py-4 text-right font-medium">
+                                            {/* TOTAL */}
+                                            <td className="whitespace-nowrap text-right">
+                                                <span className="font-semibold tabular-nums">
                                                     {formatCurrency(
                                                         ppmp.total_budget,
                                                     )}
-                                                </td>
+                                                </span>
+                                            </td>
 
-                                                <td className="px-4 py-4">
-                                                    <span
-                                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses(
-                                                            ppmp.status,
-                                                        )}`}
+                                            {/* STATUS */}
+                                            <td>
+                                                <StatusBadge
+                                                    status={
+                                                        ppmp.status
+                                                    }
+                                                />
+                                            </td>
+
+                                            {/* UPDATED */}
+                                            <td className="whitespace-nowrap text-xs text-muted-foreground">
+                                                {ppmp.updated_at ??
+                                                    '—'}
+                                            </td>
+
+                                            {/* ACTIONS */}
+                                            <td>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        asChild
                                                     >
-                                                        {formatStatus(
-                                                            ppmp.status,
-                                                        )}
-                                                    </span>
-                                                </td>
-
-                                                <td className="whitespace-nowrap px-4 py-4 text-muted-foreground">
-                                                    {ppmp.updated_at ??
-                                                        '—'}
-                                                </td>
-
-                                                <td className="px-4 py-4">
-                                                    <div className="flex justify-end gap-2">
                                                         <Link
                                                             href={`/ppmps/${ppmp.id}`}
-                                                            className="rounded-md border px-3 py-2 text-xs font-medium hover:bg-muted"
                                                         >
                                                             View
                                                         </Link>
+                                                    </Button>
 
-                                                        {[
-                                                            'draft',
-                                                            'returned_for_revision',
-                                                        ].includes(ppmp.status) && (
+                                                    {[
+                                                        'draft',
+                                                        'returned_for_revision',
+                                                    ].includes(
+                                                        ppmp.status,
+                                                    ) && (
+                                                        <Button
+                                                            size="sm"
+                                                            asChild
+                                                        >
                                                             <Link
                                                                 href={`/ppmps/${ppmp.id}/edit`}
-                                                                className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
                                                             >
                                                                 Edit
                                                             </Link>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ),
-                                    )
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm text-muted-foreground">
-                            Showing{' '}
-                            {ppmps.from ?? 0} to{' '}
-                            {ppmps.to ?? 0} of{' '}
-                            {ppmps.total} PPMPs
-                        </p>
-
-                        <div className="flex flex-wrap gap-1">
-                            {ppmps.links.map(
-                                (link, index) =>
-                                    link.url ? (
-                                        <Link
-                                            key={
-                                                index
-                                            }
-                                            href={
-                                                link.url
-                                            }
-                                            preserveState
-                                            className={`rounded-md border px-3 py-1.5 text-sm ${
-                                                link.active
-                                                    ? 'bg-primary text-primary-foreground'
-                                                    : 'hover:bg-muted'
-                                            }`}
-                                            dangerouslySetInnerHTML={{
-                                                __html:
-                                                    link.label,
-                                            }}
-                                        />
-                                    ) : (
-                                        <span
-                                            key={
-                                                index
-                                            }
-                                            className="rounded-md border px-3 py-1.5 text-sm opacity-40"
-                                            dangerouslySetInnerHTML={{
-                                                __html:
-                                                    link.label,
-                                            }}
-                                        />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
                                     ),
+                                )
                             )}
-                        </div>
-                    </div>
-                </div>
+                        </tbody>
+                    </table>
+                </DataTableShell>
             </div>
         </AppLayout>
     );

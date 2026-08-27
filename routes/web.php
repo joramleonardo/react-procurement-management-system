@@ -8,6 +8,7 @@ use App\Http\Controllers\PpmpController;
 use App\Http\Controllers\PpmpAttachmentController;
 use App\Http\Controllers\PpmpWorkflowController;
 use App\Http\Controllers\PurchaseRequestController;
+use App\Http\Controllers\DashboardController;
 
 Route::get('/', function () {
     return Inertia::render('welcome');
@@ -15,9 +16,10 @@ Route::get('/', function () {
 
 Route::middleware(['auth'])->group(function () {
 
-    Route::get('dashboard', function () {
-        return Inertia::render('dashboard');
-    })->name('dashboard');
+    Route::get(
+        '/dashboard',
+        DashboardController::class
+    )->name('dashboard');
 
     Route::prefix('admin')
         ->name('admin.')

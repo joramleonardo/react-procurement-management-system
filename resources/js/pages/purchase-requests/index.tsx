@@ -1,3 +1,9 @@
+// resources/js/pages/purchase-requests/index.tsx
+
+import { DataTableShell } from '@/components/pms/data-table-shell';
+import { EmptyState } from '@/components/pms/empty-state';
+import { PageHeader } from '@/components/pms/page-header';
+import { StatusBadge } from '@/components/pms/status-badge';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
@@ -6,6 +12,10 @@ import {
     Link,
     router,
 } from '@inertiajs/react';
+import {
+    FileText,
+    Search,
+} from 'lucide-react';
 import {
     FormEvent,
     useState,
@@ -105,42 +115,6 @@ function formatCurrency(
     ).format(Number(value));
 }
 
-function formatStatus(
-    status: string,
-): string {
-    switch (status) {
-        case 'submitted':
-            return 'Submitted for Review';
-
-        case 'returned_for_revision':
-            return 'Returned for Revision';
-
-        case 'approved':
-            return 'Approved';
-
-        default:
-            return 'Draft';
-    }
-}
-
-function statusClasses(
-    status: string,
-): string {
-    switch (status) {
-        case 'approved':
-            return 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300';
-
-        case 'submitted':
-            return 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300';
-
-        case 'returned_for_revision':
-            return 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300';
-
-        default:
-            return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
-    }
-}
-
 export default function PurchaseRequestIndex({
     purchaseRequests,
     filters,
@@ -204,357 +178,457 @@ export default function PurchaseRequestIndex({
                 title="Purchase Requests"
             />
 
-            <div className="flex flex-1 flex-col gap-5 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-semibold">
-                            Purchase Requests
-                        </h1>
+            <div className="pms-page">
+                {/* PAGE HEADER */}
+                <PageHeader
+                    eyebrow="Procurement"
+                    title="Purchase Requests"
+                    description="Create and monitor Purchase Requests originating from approved PPMPs."
+                    icon={FileText}
+                    actions={
+                        can.create ? (
+                            <Button
+                                variant="outline"
+                                asChild
+                            >
+                                <Link href="/ppmps">
+                                    Find Approved
+                                    PPMP
+                                </Link>
+                            </Button>
+                        ) : null
+                    }
+                />
 
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Create and monitor
-                            Purchase Requests
-                            originating from
-                            approved PPMPs.
-                        </p>
-                    </div>
-
-                    {can.create && (
-                        <Button
-                            variant="outline"
-                            asChild
-                        >
-                            <Link href="/ppmps">
-                                Select Approved
-                                PPMP
-                            </Link>
-                        </Button>
-                    )}
-                </div>
-
+                {/* SUCCESS MESSAGE */}
                 {flash.success && (
-                    <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
+                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950/50 dark:text-green-200">
                         {flash.success}
                     </div>
                 )}
 
+                {/* FILTER BAR */}
                 <form
                     onSubmit={
                         submitFilters
                     }
-                    className="grid gap-3 rounded-xl border bg-background p-4 md:grid-cols-2 xl:grid-cols-[1fr_180px_180px_auto_auto]"
+                    className="pms-filter-bar grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(300px,1fr)_190px_160px_auto_auto]"
                 >
-                    <input
-                        type="search"
-                        value={search}
-                        onChange={(event) =>
-                            setSearch(
-                                event.target
-                                    .value,
-                            )
-                        }
-                        placeholder="Search PR no., PPMP no., purpose, or office"
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    />
+                    {/* SEARCH */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="search"
+                            className="text-xs font-medium text-muted-foreground"
+                        >
+                            Search
+                        </label>
 
-                    <select
-                        value={status}
-                        onChange={(event) =>
-                            setStatus(
-                                event.target
-                                    .value,
-                            )
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    >
-                        <option value="">
-                            All statuses
-                        </option>
+                        <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 
-                        <option value="draft">
-                            Draft
-                        </option>
+                            <input
+                                id="search"
+                                type="search"
+                                value={search}
+                                onChange={(
+                                    event,
+                                ) =>
+                                    setSearch(
+                                        event
+                                            .target
+                                            .value,
+                                    )
+                                }
+                                placeholder="PR no., PPMP no., purpose, or office"
+                                className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm"
+                            />
+                        </div>
+                    </div>
 
-                        <option value="submitted">
-                            Submitted for
-                            Review
-                        </option>
+                    {/* STATUS */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="status"
+                            className="text-xs font-medium text-muted-foreground"
+                        >
+                            Status
+                        </label>
 
-                        <option value="returned_for_revision">
-                            Returned for
-                            Revision
-                        </option>
+                        <select
+                            id="status"
+                            value={status}
+                            onChange={(
+                                event,
+                            ) =>
+                                setStatus(
+                                    event
+                                        .target
+                                        .value,
+                                )
+                            }
+                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                            <option value="">
+                                All statuses
+                            </option>
 
-                        <option value="approved">
-                            Approved
-                        </option>
-                    </select>
+                            <option value="draft">
+                                Draft
+                            </option>
 
-                    <select
-                        value={year}
-                        onChange={(event) =>
-                            setYear(
-                                event.target
-                                    .value,
-                            )
-                        }
-                        className="h-10 rounded-md border bg-background px-3 text-sm"
-                    >
-                        <option value="">
-                            All years
-                        </option>
+                            <option value="submitted">
+                                Submitted for
+                                Review
+                            </option>
 
-                        {years.map(
-                            (value) => (
-                                <option
-                                    key={
-                                        value
-                                    }
-                                    value={
-                                        value
-                                    }
-                                >
-                                    {
-                                        value
-                                    }
-                                </option>
-                            ),
-                        )}
-                    </select>
+                            <option value="returned_for_revision">
+                                Returned for
+                                Revision
+                            </option>
 
-                    <Button type="submit">
-                        Apply
-                    </Button>
+                            <option value="approved">
+                                Approved
+                            </option>
+                        </select>
+                    </div>
 
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={
-                            resetFilters
-                        }
-                    >
-                        Reset
-                    </Button>
+                    {/* YEAR */}
+                    <div className="grid gap-1.5">
+                        <label
+                            htmlFor="year"
+                            className="text-xs font-medium text-muted-foreground"
+                        >
+                            Year
+                        </label>
+
+                        <select
+                            id="year"
+                            value={year}
+                            onChange={(
+                                event,
+                            ) =>
+                                setYear(
+                                    event
+                                        .target
+                                        .value,
+                                )
+                            }
+                            className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                            <option value="">
+                                All years
+                            </option>
+
+                            {years.map(
+                                (
+                                    value,
+                                ) => (
+                                    <option
+                                        key={
+                                            value
+                                        }
+                                        value={
+                                            value
+                                        }
+                                    >
+                                        {
+                                            value
+                                        }
+                                    </option>
+                                ),
+                            )}
+                        </select>
+                    </div>
+
+                    {/* APPLY */}
+                    <div className="flex items-end">
+                        <Button
+                            type="submit"
+                            className="w-full xl:w-auto"
+                        >
+                            Apply Filters
+                        </Button>
+                    </div>
+
+                    {/* CLEAR */}
+                    <div className="flex items-end">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={
+                                resetFilters
+                            }
+                            className="w-full xl:w-auto"
+                        >
+                            Clear Filters
+                        </Button>
+                    </div>
                 </form>
 
-                <div className="overflow-hidden rounded-xl border bg-background">
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1150px] text-sm">
-                            <thead className="border-b bg-muted/50">
-                                <tr>
-                                    <th className="px-4 py-3 text-left">
-                                        PR No.
-                                    </th>
+                {/* PURCHASE REQUEST TABLE */}
+                <DataTableShell
+                    footer={
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm text-muted-foreground">
+                                Showing{' '}
+                                {purchaseRequests.from ??
+                                    0}{' '}
+                                to{' '}
+                                {purchaseRequests.to ??
+                                    0}{' '}
+                                of{' '}
+                                {
+                                    purchaseRequests.total
+                                }{' '}
+                                Purchase
+                                Requests
+                            </p>
 
-                                    <th className="px-4 py-3 text-left">
-                                        Date
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Source PPMP
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Office /
-                                        Section
-                                    </th>
-
-                                    <th className="px-4 py-3 text-center">
-                                        Items
-                                    </th>
-
-                                    <th className="px-4 py-3 text-right">
-                                        Total Amount
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Status
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Created By
-                                    </th>
-
-                                    <th className="px-4 py-3 text-left">
-                                        Updated
-                                    </th>
-                                </tr>
-                            </thead>
-
-                            <tbody className="divide-y">
+                            {/* PAGINATION */}
+                            <div className="flex flex-wrap gap-1">
                                 {purchaseRequests
-                                    .data
-                                    .length ===
-                                0 ? (
-                                    <tr>
-                                        <td
-                                            colSpan={
-                                                9
-                                            }
-                                            className="px-4 py-12 text-center text-muted-foreground"
-                                        >
-                                            No Purchase
-                                            Requests
-                                            found.
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    purchaseRequests
-                                        .data
-                                        .map(
-                                            (
-                                                pr,
-                                            ) => (
-                                                <tr
+                                    .links
+                                    .map(
+                                        (
+                                            link,
+                                            index,
+                                        ) =>
+                                            link.url ? (
+                                                <Link
                                                     key={
-                                                        pr.id
+                                                        index
                                                     }
-                                                    className="hover:bg-muted/30"
-                                                >
-                                                    <td className="px-4 py-4 font-medium">
+                                                    href={
+                                                        link.url
+                                                    }
+                                                    preserveState
+                                                    className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                                                        link.active
+                                                            ? 'border-primary bg-primary text-primary-foreground'
+                                                            : 'bg-background hover:bg-muted'
+                                                    }`}
+                                                    dangerouslySetInnerHTML={{
+                                                        __html:
+                                                            link.label,
+                                                    }}
+                                                />
+                                            ) : (
+                                                <span
+                                                    key={
+                                                        index
+                                                    }
+                                                    className="rounded-md border bg-background px-3 py-1.5 text-sm opacity-40"
+                                                    dangerouslySetInnerHTML={{
+                                                        __html:
+                                                            link.label,
+                                                    }}
+                                                />
+                                            ),
+                                    )}
+                            </div>
+                        </div>
+                    }
+                >
+                    <table className="pms-table min-w-[1180px]">
+                        <thead>
+                            <tr>
+                                <th className="w-[190px]">
+                                    PR No.
+                                </th>
+
+                                <th className="w-[130px]">
+                                    Date
+                                </th>
+
+                                <th className="w-[180px]">
+                                    Source PPMP
+                                </th>
+
+                                <th className="w-[260px]">
+                                    Office /
+                                    Section
+                                </th>
+
+                                <th className="w-[90px] text-center">
+                                    Items
+                                </th>
+
+                                <th className="w-[180px] text-right">
+                                    Total Amount
+                                </th>
+
+                                <th className="w-[190px]">
+                                    Status
+                                </th>
+
+                                <th className="w-[190px]">
+                                    Created By
+                                </th>
+
+                                <th className="w-[180px]">
+                                    Updated
+                                </th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {purchaseRequests
+                                .data
+                                .length ===
+                            0 ? (
+                                <tr>
+                                    <td
+                                        colSpan={
+                                            9
+                                        }
+                                        className="p-0!"
+                                    >
+                                        <EmptyState
+                                            icon={
+                                                FileText
+                                            }
+                                            title="No Purchase Requests found"
+                                            description="No Purchase Requests match your current filters. Try changing the filters or select an approved PPMP to create a new request."
+                                            action={
+                                                can.create ? (
+                                                    <Button
+                                                        variant="outline"
+                                                        asChild
+                                                    >
+                                                        <Link href="/ppmps">
+                                                            Find
+                                                            Approved
+                                                            PPMP
+                                                        </Link>
+                                                    </Button>
+                                                ) : undefined
+                                            }
+                                        />
+                                    </td>
+                                </tr>
+                            ) : (
+                                purchaseRequests
+                                    .data
+                                    .map(
+                                        (
+                                            pr,
+                                        ) => (
+                                            <tr
+                                                key={
+                                                    pr.id
+                                                }
+                                            >
+                                                {/* PR NUMBER */}
+                                                <td>
+                                                    <div className="font-semibold text-foreground">
                                                         {
                                                             pr.pr_no
                                                         }
-                                                    </td>
+                                                    </div>
 
-                                                    <td className="whitespace-nowrap px-4 py-4">
-                                                        {pr.pr_date ??
-                                                            '—'}
-                                                    </td>
-
-                                                    <td className="px-4 py-4">
-                                                        <Link
-                                                            href={`/ppmps/${pr.ppmp.id}`}
-                                                            className="font-medium hover:underline"
+                                                    {pr.purpose && (
+                                                        <div
+                                                            className="mt-1 max-w-[220px] truncate text-xs text-muted-foreground"
+                                                            title={
+                                                                pr.purpose
+                                                            }
                                                         >
                                                             {
-                                                                pr
-                                                                    .ppmp
-                                                                    .ppmp_no
-                                                            }
-                                                        </Link>
-                                                    </td>
-
-                                                    <td className="px-4 py-4">
-                                                        <div className="font-medium">
-                                                            {
-                                                                pr
-                                                                    .office
-                                                                    .code
+                                                                pr.purpose
                                                             }
                                                         </div>
+                                                    )}
+                                                </td>
 
-                                                        <div className="max-w-[220px] text-xs text-muted-foreground">
-                                                            {
-                                                                pr
-                                                                    .office
-                                                                    .name
-                                                            }
-                                                        </div>
-                                                    </td>
+                                                {/* DATE */}
+                                                <td className="whitespace-nowrap">
+                                                    {pr.pr_date ??
+                                                        '—'}
+                                                </td>
 
-                                                    <td className="px-4 py-4 text-center">
+                                                {/* SOURCE PPMP */}
+                                                <td>
+                                                    <Link
+                                                        href={`/ppmps/${pr.ppmp.id}`}
+                                                        className="font-medium text-primary hover:underline"
+                                                    >
+                                                        {
+                                                            pr
+                                                                .ppmp
+                                                                .ppmp_no
+                                                        }
+                                                    </Link>
+                                                </td>
+
+                                                {/* OFFICE */}
+                                                <td>
+                                                    <div className="font-medium">
+                                                        {
+                                                            pr
+                                                                .office
+                                                                .code
+                                                        }
+                                                    </div>
+
+                                                    <div className="mt-0.5 max-w-[240px] text-xs leading-5 text-muted-foreground">
+                                                        {
+                                                            pr
+                                                                .office
+                                                                .name
+                                                        }
+                                                    </div>
+                                                </td>
+
+                                                {/* ITEM COUNT */}
+                                                <td className="text-center">
+                                                    <span className="inline-flex min-w-8 justify-center rounded-md bg-muted px-2 py-1 text-xs font-semibold">
                                                         {
                                                             pr.items_count
                                                         }
-                                                    </td>
+                                                    </span>
+                                                </td>
 
-                                                    <td className="whitespace-nowrap px-4 py-4 text-right font-medium">
+                                                {/* TOTAL AMOUNT */}
+                                                <td className="whitespace-nowrap text-right">
+                                                    <span className="font-semibold text-foreground">
                                                         {formatCurrency(
                                                             pr.total_amount,
                                                         )}
-                                                    </td>
+                                                    </span>
+                                                </td>
 
-                                                    <td className="px-4 py-4">
-                                                        <span
-                                                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses(
-                                                                pr.status,
-                                                            )}`}
-                                                        >
-                                                            {formatStatus(
-                                                                pr.status,
-                                                            )}
-                                                        </span>
-                                                    </td>
+                                                {/* STATUS */}
+                                                <td>
+                                                    <StatusBadge
+                                                        status={
+                                                            pr.status
+                                                        }
+                                                    />
+                                                </td>
 
-                                                    <td className="px-4 py-4">
+                                                {/* CREATED BY */}
+                                                <td>
+                                                    <div className="font-medium">
                                                         {
                                                             pr
                                                                 .requester
                                                                 .name
                                                         }
-                                                    </td>
+                                                    </div>
+                                                </td>
 
-                                                    <td className="whitespace-nowrap px-4 py-4 text-muted-foreground">
-                                                        {pr.updated_at ??
-                                                            '—'}
-                                                    </td>
-                                                </tr>
-                                            ),
-                                        )
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm text-muted-foreground">
-                            Showing{' '}
-                            {purchaseRequests.from ??
-                                0}{' '}
-                            to{' '}
-                            {purchaseRequests.to ??
-                                0}{' '}
-                            of{' '}
-                            {
-                                purchaseRequests.total
-                            }{' '}
-                            Purchase Requests
-                        </p>
-
-                        <div className="flex flex-wrap gap-1">
-                            {purchaseRequests
-                                .links
-                                .map(
-                                    (
-                                        link,
-                                        index,
-                                    ) =>
-                                        link.url ? (
-                                            <Link
-                                                key={
-                                                    index
-                                                }
-                                                href={
-                                                    link.url
-                                                }
-                                                preserveState
-                                                className={`rounded-md border px-3 py-1.5 text-sm ${
-                                                    link.active
-                                                        ? 'bg-primary text-primary-foreground'
-                                                        : 'hover:bg-muted'
-                                                }`}
-                                                dangerouslySetInnerHTML={{
-                                                    __html:
-                                                        link.label,
-                                                }}
-                                            />
-                                        ) : (
-                                            <span
-                                                key={
-                                                    index
-                                                }
-                                                className="rounded-md border px-3 py-1.5 text-sm opacity-40"
-                                                dangerouslySetInnerHTML={{
-                                                    __html:
-                                                        link.label,
-                                                }}
-                                            />
+                                                {/* UPDATED */}
+                                                <td className="whitespace-nowrap text-muted-foreground">
+                                                    {pr.updated_at ??
+                                                        '—'}
+                                                </td>
+                                            </tr>
                                         ),
-                                )}
-                        </div>
-                    </div>
-                </div>
+                                    )
+                            )}
+                        </tbody>
+                    </table>
+                </DataTableShell>
             </div>
         </AppLayout>
     );
