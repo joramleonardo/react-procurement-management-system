@@ -33,9 +33,15 @@ interface Coordinator {
 
 interface PpmpRecord {
     id: number;
+    ppmp_series_id: number;
     ppmp_no: string;
     fiscal_year: number;
     plan_type: string;
+    indicative_no: number | null;
+    version_label: string;
+    original_ppmp_id: number | null;
+    original_ppmp_no: string | null;
+    is_latest_version: boolean;
     status: string;
     total_budget: string;
     items_count: number;
@@ -492,7 +498,7 @@ export default function PpmpIndex({
                     <table className="pms-table min-w-[1180px]">
                         <thead>
                             <tr>
-                                <th className="w-[200px]">
+                                <th className="w-[240px]">
                                     PPMP No.
                                 </th>
 
@@ -573,7 +579,7 @@ export default function PpmpIndex({
                                                 ppmp.id
                                             }
                                         >
-                                            {/* PPMP NUMBER */}
+                                            {/* PPMP NUMBER / VERSION */}
                                             <td>
                                                 <Link
                                                     href={`/ppmps/${ppmp.id}`}
@@ -584,11 +590,48 @@ export default function PpmpIndex({
                                                     }
                                                 </Link>
 
-                                                <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                                                    {
-                                                        ppmp.plan_type
-                                                    }
+                                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                                    <span className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                                        {ppmp.plan_type ===
+                                                        'indicative'
+                                                            ? `Indicative No. ${ppmp.indicative_no ?? '—'}`
+                                                            : ppmp.version_label}
+                                                    </span>
+
+                                                    {ppmp.is_latest_version && (
+                                                        <span className="border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-blue-700 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
+                                                            Latest
+                                                        </span>
+                                                    )}
                                                 </div>
+
+                                                {ppmp.plan_type ===
+                                                    'indicative' &&
+                                                    ppmp.indicative_no ===
+                                                        1 ? (
+                                                    <div className="mt-1 text-[10px] font-medium text-muted-foreground">
+                                                        Original PPMP
+                                                    </div>
+                                                ) : ppmp.original_ppmp_id &&
+                                                  ppmp.original_ppmp_no ? (
+                                                    <div className="mt-1 text-[10px] text-muted-foreground">
+                                                        Original:{' '}
+
+                                                        <Link
+                                                            href={`/ppmps/${ppmp.original_ppmp_id}`}
+                                                            className="font-semibold text-blue-700 hover:underline dark:text-blue-300"
+                                                            onClick={(
+                                                                event,
+                                                            ) =>
+                                                                event.stopPropagation()
+                                                            }
+                                                        >
+                                                            {
+                                                                ppmp.original_ppmp_no
+                                                            }
+                                                        </Link>
+                                                    </div>
+                                                ) : null}
                                             </td>
 
                                             {/* FISCAL YEAR */}

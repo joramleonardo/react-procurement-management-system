@@ -182,6 +182,9 @@ class PpmpAttachmentController extends Controller
             $user->hasRole(
                 'ppmp-coordinator'
             )
+            && $user->can(
+                'ppmps.update-own'
+            )
             && $user->office_id
                 === $ppmp->office_id
             && $ppmp->isEditable(),

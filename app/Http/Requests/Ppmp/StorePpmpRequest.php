@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Ppmp;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class StorePpmpRequest extends FormRequest
 {
@@ -30,13 +29,13 @@ class StorePpmpRequest extends FormRequest
                 'max:'.(now()->year + 5),
             ],
 
-            'plan_type' => [
-                'required',
-                Rule::in([
-                    'indicative',
-                    'final',
-                ]),
-            ],
+            /*
+             * plan_type is intentionally NOT accepted.
+             *
+             * New PPMPs created by a PPMP Coordinator
+             * are always Indicative and the backend
+             * controls that value.
+             */
 
             'prepared_by_name' => [
                 'nullable',
@@ -123,6 +122,7 @@ class StorePpmpRequest extends FormRequest
                 'numeric',
                 'min:0',
                 'max:9999999999999.99',
+                'regex:/^\d{1,13}(\.\d{1,2})?$/',
             ],
 
             'items.*.remarks' => [
@@ -147,6 +147,12 @@ class StorePpmpRequest extends FormRequest
 
             'items.*.estimated_budget.min' =>
                 'The estimated budget cannot be negative.',
+
+            'items.*.estimated_budget.max' =>
+                'The estimated budget exceeds the maximum allowed amount.',
+
+            'items.*.estimated_budget.regex' =>
+                'The estimated budget may contain a maximum of two decimal places.',
         ];
     }
 }

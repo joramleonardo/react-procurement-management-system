@@ -136,6 +136,14 @@ Route::middleware(['auth'])->group(function () {
         ->name('ppmps.update');
 
     Route::post(
+        'ppmps/{ppmp}/revisions',
+        [PpmpController::class, 'createRevision']
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:ppmps.create')
+        ->name('ppmps.revisions.store');
+
+    Route::post(
         'ppmps/{ppmp}/items/{item}/attachments',
         [PpmpAttachmentController::class, 'store']
     )

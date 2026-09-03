@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Ppmp;
+use App\Models\PpmpSeries;
+use App\Models\PurchaseRequestItem;
 use App\Services\AuditLogService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -28,7 +30,8 @@ class PpmpWorkflowController extends Controller
     ): RedirectResponse {
         $this->ensureCoordinatorOwnsPpmp(
             $request,
-            $ppmp
+            $ppmp,
+            'ppmps.submit'
         );
 
         if ($ppmp->status !== 'draft') {
@@ -39,6 +42,10 @@ class PpmpWorkflowController extends Controller
         }
 
         $this->validateReadyForSubmission(
+            $ppmp
+        );
+
+        $this->validateVersionIntegrity(
             $ppmp
         );
 
@@ -99,14 +106,8 @@ class PpmpWorkflowController extends Controller
     ): RedirectResponse {
         $this->ensureCoordinatorOwnsPpmp(
             $request,
-            $ppmp
-        );
-
-        abort_unless(
-            $request->user()->can(
-                'ppmps.resubmit'
-            ),
-            403
+            $ppmp,
+            'ppmps.resubmit'
         );
 
         if (
@@ -120,6 +121,10 @@ class PpmpWorkflowController extends Controller
         }
 
         $this->validateReadyForSubmission(
+            $ppmp
+        );
+
+        $this->validateVersionIntegrity(
             $ppmp
         );
 
@@ -299,6 +304,19 @@ class PpmpWorkflowController extends Controller
             ]);
         }
 
+        /*
+         * Defense-in-depth: the PPMP itself must still
+         * satisfy all submission/versioning rules before
+         * GSPS can record the offline approval.
+         */
+        $this->validateReadyForSubmission(
+            $ppmp
+        );
+
+        $this->validateVersionIntegrity(
+            $ppmp
+        );
+
         $validated = $request->validate([
             'approved_ppmp' => [
                 'required',
@@ -330,15 +348,64 @@ class PpmpWorkflowController extends Controller
                 $file,
                 $path
             ): void {
+                $lockedPpmp =
+                    Ppmp::query()
+                        ->whereKey(
+                            $ppmp->id
+                        )
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                if (
+                    $lockedPpmp->status !==
+                    'submitted'
+                ) {
+                    throw ValidationException::withMessages([
+                        'workflow' =>
+                            'This PPMP is no longer in Submitted status.',
+                    ]);
+                }
+
+                if (
+                    $lockedPpmp->ppmp_series_id ===
+                    null
+                ) {
+                    throw ValidationException::withMessages([
+                        'workflow' =>
+                            'PPMP series information is missing.',
+                    ]);
+                }
+
+                $series =
+                    PpmpSeries::query()
+                        ->whereKey(
+                            $lockedPpmp->ppmp_series_id
+                        )
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                $lockedPpmp->setRelation(
+                    'series',
+                    $series
+                );
+
+                $this->validateReadyForSubmission(
+                    $lockedPpmp
+                );
+
+                $this->validateVersionIntegrity(
+                    $lockedPpmp
+                );
+
                 $oldStatus =
-                    $ppmp->status;
+                    $lockedPpmp->status;
 
                 /*
                  * Remove an older approved copy
                  * if one somehow already exists.
                  */
                 $oldApprovedCopies =
-                    $ppmp->attachments()
+                    $lockedPpmp->attachments()
                         ->where(
                             'document_type',
                             'approved_ppmp'
@@ -357,7 +424,7 @@ class PpmpWorkflowController extends Controller
                     $oldCopy->delete();
                 }
 
-                $ppmp->attachments()->create([
+                $lockedPpmp->attachments()->create([
                     'ppmp_item_id' => null,
 
                     'document_type' =>
@@ -382,7 +449,27 @@ class PpmpWorkflowController extends Controller
                         $request->user()->id,
                 ]);
 
-                $ppmp->forceFill([
+                /*
+                 * Indicative No. 1 establishes the permanent
+                 * Original PPMP Budget at approval. Later
+                 * revisions may never change this amount.
+                 */
+                if (
+                    $lockedPpmp->isFirstIndicative()
+                ) {
+                    $series->forceFill([
+                        'fiscal_year' =>
+                            $lockedPpmp->fiscal_year,
+
+                        'original_budget' =>
+                            $lockedPpmp->total_budget,
+
+                        'updated_by' =>
+                            $request->user()->id,
+                    ])->save();
+                }
+
+                $lockedPpmp->forceFill([
                     'status' => 'approved',
 
                     'approved_at' => now(),
@@ -396,7 +483,7 @@ class PpmpWorkflowController extends Controller
                         $request->user()->id,
                 ])->save();
 
-                $ppmp->statusHistories()
+                $lockedPpmp->statusHistories()
                     ->create([
                         'from_status' =>
                             $oldStatus,
@@ -425,10 +512,10 @@ class PpmpWorkflowController extends Controller
                         action:
                             'ppmp-approved',
 
-                        subject: $ppmp,
+                        subject: $lockedPpmp,
 
                         description:
-                            "{$ppmp->ppmp_no} was approved.",
+                            "{$lockedPpmp->ppmp_no} was approved.",
 
                         oldValues: [
                             'status' =>
@@ -445,8 +532,12 @@ class PpmpWorkflowController extends Controller
                                     ->id,
 
                             'approved_at' =>
-                                $ppmp
+                                $lockedPpmp
                                     ->approved_at,
+
+                            'original_budget' =>
+                                $series
+                                    ->original_budget,
                         ],
 
                         request: $request
@@ -562,9 +653,9 @@ class PpmpWorkflowController extends Controller
             }
 
             if (
-                (float)
+                $this->moneyToCents(
                     $item->estimated_budget
-                <= 0
+                ) <= 0
             ) {
                 $errors[
                     "items.{$index}.estimated_budget"
@@ -580,9 +671,352 @@ class PpmpWorkflowController extends Controller
         }
     }
 
+    /**
+     * Validate versioning business rules before
+     * Submit, Resubmit, and Approve.
+     */
+    private function validateVersionIntegrity(
+        Ppmp $ppmp
+    ): void {
+        $ppmp->loadMissing([
+            'series',
+            'items',
+        ]);
+
+        if (
+            $ppmp->series ===
+            null
+        ) {
+            throw ValidationException::withMessages([
+                'workflow' =>
+                    'PPMP series information is missing.',
+            ]);
+        }
+
+        /*
+         * Indicative No. 2 and succeeding revisions must
+         * retain EXACTLY the permanent Original PPMP Budget.
+         */
+        if (
+            $ppmp->isIndicative()
+            && ! $ppmp->isFirstIndicative()
+        ) {
+            $currentTotalCents =
+                $this->moneyToCents(
+                    $ppmp->total_budget
+                );
+
+            $originalBudgetCents =
+                $this->moneyToCents(
+                    $ppmp->series->original_budget
+                );
+
+            if (
+                $currentTotalCents !==
+                $originalBudgetCents
+            ) {
+                throw ValidationException::withMessages([
+                    'workflow' =>
+                        'Indicative No. '
+                        .$ppmp->indicative_no
+                        .' cannot proceed because its total budget must exactly match the Original PPMP Budget of ₱'
+                        .number_format(
+                            $originalBudgetCents / 100,
+                            2
+                        )
+                        .'. Current total: ₱'
+                        .number_format(
+                            $currentTotalCents / 100,
+                            2
+                        )
+                        .'.',
+                ]);
+            }
+        }
+
+        if (
+            $ppmp->isIndicative()
+        ) {
+            $this->validateCurrentLineageUtilization(
+                $ppmp
+            );
+        }
+    }
+
+    /**
+     * Ensure historical APPROVED PR utilization remains
+     * covered by the current PPMP version.
+     */
+    private function validateCurrentLineageUtilization(
+        Ppmp $ppmp
+    ): void {
+        if (
+            $ppmp->ppmp_series_id ===
+            null
+        ) {
+            throw ValidationException::withMessages([
+                'workflow' =>
+                    'PPMP series information is missing.',
+            ]);
+        }
+
+        $ppmp->loadMissing('items');
+
+        $currentAllocationByLineage = [];
+        $currentLabelByLineage = [];
+
+        foreach (
+            $ppmp->items
+            as $item
+        ) {
+            if (
+                blank($item->lineage_uuid)
+            ) {
+                throw ValidationException::withMessages([
+                    'workflow' =>
+                        'One or more PPMP items are missing lineage tracking information. Please have the PPMP record reviewed before continuing.',
+                ]);
+            }
+
+            $lineageUuid =
+                (string) $item->lineage_uuid;
+
+            $currentAllocationByLineage[$lineageUuid] =
+                ($currentAllocationByLineage[$lineageUuid] ?? 0)
+                + $this->moneyToCents(
+                    $item->estimated_budget
+                );
+
+            $currentLabelByLineage[$lineageUuid] =
+                trim((string) $item->description_objective) !== ''
+                    ? (string) $item->description_objective
+                    : "PPMP Item #{$item->id}";
+        }
+
+        /*
+         * Include every lineage ever used in this series so
+         * a historically utilized item cannot disappear from
+         * a later revision and bypass the protection.
+         */
+        $seriesLineages =
+            DB::table('ppmp_items')
+                ->join(
+                    'ppmps',
+                    'ppmps.id',
+                    '=',
+                    'ppmp_items.ppmp_id'
+                )
+                ->where(
+                    'ppmps.ppmp_series_id',
+                    $ppmp->ppmp_series_id
+                )
+                ->whereNull(
+                    'ppmps.deleted_at'
+                )
+                ->whereNotNull(
+                    'ppmp_items.lineage_uuid'
+                )
+                ->where(
+                    'ppmp_items.lineage_uuid',
+                    '<>',
+                    ''
+                )
+                ->pluck(
+                    'ppmp_items.lineage_uuid'
+                )
+                ->unique()
+                ->values()
+                ->all();
+
+        if (
+            $seriesLineages === []
+        ) {
+            return;
+        }
+
+        $approvedUtilization =
+            $this->approvedPrUtilizationByLineage(
+                $seriesLineages
+            );
+
+        foreach (
+            $approvedUtilization
+            as $lineageUuid => $utilizedCents
+        ) {
+            if (
+                $utilizedCents <= 0
+            ) {
+                continue;
+            }
+
+            $currentAllocationCents =
+                $currentAllocationByLineage[$lineageUuid]
+                ?? 0;
+
+            if (
+                $currentAllocationCents >=
+                $utilizedCents
+            ) {
+                continue;
+            }
+
+            $label =
+                $currentLabelByLineage[$lineageUuid]
+                ?? 'A procurement item removed from the current revision';
+
+            throw ValidationException::withMessages([
+                'workflow' =>
+                    "\"{$label}\" cannot proceed because its current allocation is ₱"
+                    .number_format(
+                        $currentAllocationCents / 100,
+                        2
+                    )
+                    .' while its cumulative historical approved PR utilization is ₱'
+                    .number_format(
+                        $utilizedCents / 100,
+                        2
+                    )
+                    .'.',
+            ]);
+        }
+    }
+
+    /**
+     * Return cumulative APPROVED PR utilization keyed by
+     * PPMP item lineage UUID.
+     *
+     * @param array<int, string> $lineageUuids
+     * @return array<string, int>
+     */
+    private function approvedPrUtilizationByLineage(
+        array $lineageUuids
+    ): array {
+        if (
+            $lineageUuids === []
+        ) {
+            return [];
+        }
+
+        $rows =
+            PurchaseRequestItem::query()
+                ->selectRaw(
+                    'ppmp_items.lineage_uuid AS lineage_uuid, '
+                    .'SUM(purchase_request_items.total_cost) AS utilized_total'
+                )
+                ->join(
+                    'ppmp_items',
+                    'ppmp_items.id',
+                    '=',
+                    'purchase_request_items.ppmp_item_id'
+                )
+                ->join(
+                    'purchase_requests',
+                    'purchase_requests.id',
+                    '=',
+                    'purchase_request_items.purchase_request_id'
+                )
+                ->where(
+                    'purchase_requests.status',
+                    'approved'
+                )
+                ->whereNull(
+                    'purchase_requests.deleted_at'
+                )
+                ->whereIn(
+                    'ppmp_items.lineage_uuid',
+                    $lineageUuids
+                )
+                ->groupBy(
+                    'ppmp_items.lineage_uuid'
+                )
+                ->get();
+
+        $result = [];
+
+        foreach (
+            $rows
+            as $row
+        ) {
+            $lineageUuid =
+                (string) $row->lineage_uuid;
+
+            if (
+                $lineageUuid === ''
+            ) {
+                continue;
+            }
+
+            $result[$lineageUuid] =
+                $this->moneyToCents(
+                    $row->utilized_total
+                );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Convert a DECIMAL/string monetary amount to cents.
+     */
+    private function moneyToCents(
+        mixed $value
+    ): int {
+        $amount =
+            trim(
+                str_replace(
+                    ',',
+                    '',
+                    (string) ($value ?? '0')
+                )
+            );
+
+        if (
+            $amount === ''
+        ) {
+            return 0;
+        }
+
+        $parts =
+            explode(
+                '.',
+                $amount,
+                2
+            );
+
+        $whole =
+            preg_replace(
+                '/\D/',
+                '',
+                $parts[0] ?? '0'
+            );
+
+        $decimal =
+            preg_replace(
+                '/\D/',
+                '',
+                $parts[1] ?? ''
+            );
+
+        $decimal =
+            str_pad(
+                substr(
+                    $decimal,
+                    0,
+                    2
+                ),
+                2,
+                '0'
+            );
+
+        return (
+            ((int) ($whole !== '' ? $whole : '0')) * 100
+        ) + (int) $decimal;
+    }
+
     private function ensureCoordinatorOwnsPpmp(
         Request $request,
-        Ppmp $ppmp
+        Ppmp $ppmp,
+        string $permission
     ): void {
         $user = $request->user();
 
@@ -597,10 +1031,7 @@ class PpmpWorkflowController extends Controller
 
         abort_unless(
             $user->can(
-                'ppmps.submit'
-            )
-            || $user->can(
-                'ppmps.resubmit'
+                $permission
             ),
             403
         );

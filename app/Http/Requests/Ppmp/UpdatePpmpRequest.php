@@ -22,6 +22,9 @@ class UpdatePpmpRequest extends FormRequest
             && $ppmp->isEditable();
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function rules(): array
     {
         /** @var Ppmp $ppmp */
@@ -35,13 +38,13 @@ class UpdatePpmpRequest extends FormRequest
                 'max:'.(now()->year + 5),
             ],
 
-            'plan_type' => [
-                'required',
-                Rule::in([
-                    'indicative',
-                    'final',
-                ]),
-            ],
+            /*
+             * plan_type is intentionally NOT accepted.
+             *
+             * A PPMP Coordinator must not be able to
+             * change Indicative into Final through the
+             * normal PPMP edit form.
+             */
 
             'prepared_by_name' => [
                 'nullable',
@@ -76,6 +79,7 @@ class UpdatePpmpRequest extends FormRequest
             'items.*.id' => [
                 'nullable',
                 'integer',
+
                 Rule::exists(
                     'ppmp_items',
                     'id'
@@ -142,6 +146,8 @@ class UpdatePpmpRequest extends FormRequest
                 'nullable',
                 'numeric',
                 'min:0',
+                'max:9999999999999.99',
+                'regex:/^\d{1,13}(\.\d{1,2})?$/',
             ],
 
             'items.*.remarks' => [
@@ -149,6 +155,29 @@ class UpdatePpmpRequest extends FormRequest
                 'string',
                 'max:5000',
             ],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'items.max' =>
+                'A PPMP may contain a maximum of 100 procurement items.',
+
+            'items.*.estimated_budget.numeric' =>
+                'The estimated budget must be a valid amount.',
+
+            'items.*.estimated_budget.min' =>
+                'The estimated budget cannot be negative.',
+
+            'items.*.estimated_budget.max' =>
+                'The estimated budget exceeds the maximum allowed amount.',
+
+            'items.*.estimated_budget.regex' =>
+                'The estimated budget may contain a maximum of two decimal places.',
         ];
     }
 }

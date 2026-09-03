@@ -16,7 +16,7 @@ import {
     CalendarRange,
     ChevronLeft,
     ChevronRight,
-    CircleDollarSign,
+    // CircleDollarSign,
     ClipboardList,
     FileText,
     Info,
@@ -50,6 +50,13 @@ interface CreateProps {
     office: Office;
     coordinator: Coordinator;
     currentFiscalYear: number;
+
+    /*
+     * These values are controlled by Laravel.
+     * The coordinator cannot change them.
+     */
+    planType: 'indicative';
+    indicativeNo: number;
 }
 
 type PpmpItemForm = {
@@ -68,7 +75,6 @@ type PpmpItemForm = {
 
 type PpmpFormData = {
     fiscal_year: number;
-    plan_type: string;
 
     prepared_by_name: string;
     prepared_by_position: string;
@@ -282,6 +288,8 @@ export default function CreatePpmp({
     office,
     coordinator,
     currentFiscalYear,
+    planType,
+    indicativeNo,
 }: CreateProps) {
     const {
         data,
@@ -291,36 +299,53 @@ export default function CreatePpmp({
         errors,
     } = useForm<PpmpFormData>({
         fiscal_year: currentFiscalYear,
-        plan_type: 'indicative',
-        prepared_by_name: coordinator.name,
-        prepared_by_position: coordinator.position_title ?? '',
+
+        prepared_by_name:
+            coordinator.name,
+
+        prepared_by_position:
+            coordinator.position_title ?? '',
+
         submitted_by_name: '',
         submitted_by_position: '',
-        items: [ createEmptyItem(), ],
+
+        items: [
+            createEmptyItem(),
+        ],
     });
 
-    const [ activeTab, setActiveTab, ] =
-        useState<CreateTab>(
-            'information',
-        );
+    const [
+        activeTab,
+        setActiveTab,
+    ] = useState<CreateTab>(
+        'information',
+    );
 
-    const [ itemEditorOpen, setItemEditorOpen, ] =
-        useState(false);
+    const [
+        itemEditorOpen,
+        setItemEditorOpen,
+    ] = useState(false);
 
-    const [ editingIndex, setEditingIndex, ] =
-        useState<number | null>(
-            null,
-        );
+    const [
+        editingIndex,
+        setEditingIndex,
+    ] = useState<number | null>(
+        null,
+    );
 
-    const [ editorItem, setEditorItem, ] =
-        useState<PpmpItemForm>(
-            createEmptyItem(),
-        );
+    const [
+        editorItem,
+        setEditorItem,
+    ] = useState<PpmpItemForm>(
+        createEmptyItem(),
+    );
 
-    const [ editorError, setEditorError, ] =
-        useState<string | null>(
-            null,
-        );
+    const [
+        editorError,
+        setEditorError,
+    ] = useState<string | null>(
+        null,
+    );
 
     const totalBudget =
         useMemo(() => {
@@ -390,7 +415,7 @@ export default function CreatePpmp({
 
     /*
      * If Laravel returns an item validation error,
-     * automatically bring the user to the relevant item.
+     * automatically open the affected procurement item.
      */
     useEffect(() => {
         const itemErrorKey =
@@ -440,9 +465,11 @@ export default function CreatePpmp({
         setItemEditorOpen(
             true,
         );
-    }, [errors]);
+    }, [errors, data.items]);
 
-    function updateEditorItem< K extends ItemField, >(
+    function updateEditorItem<
+        K extends ItemField,
+    >(
         field: K,
         value: PpmpItemForm[K],
     ) {
@@ -460,7 +487,8 @@ export default function CreatePpmp({
     }
 
     function openNewItem() {
-        setEditingIndex(null,
+        setEditingIndex(
+            null,
         );
 
         setEditorItem(
@@ -512,7 +540,9 @@ export default function CreatePpmp({
 
     function saveEditorItem() {
         if (
-            !editorItem.description_objective.trim()
+            !editorItem
+                .description_objective
+                .trim()
         ) {
             setEditorError(
                 'Please enter the general description and objective.',
@@ -546,7 +576,8 @@ export default function CreatePpmp({
 
             estimated_budget:
                 normalizeBudgetInput(
-                    editorItem.estimated_budget,
+                    editorItem
+                        .estimated_budget,
                 ),
         };
 
@@ -566,8 +597,7 @@ export default function CreatePpmp({
                 items,
             );
         } else if (
-            data.items.length ===
-                1 &&
+            data.items.length === 1 &&
             isItemBlank(
                 data.items[0],
             )
@@ -605,8 +635,7 @@ export default function CreatePpmp({
         }
 
         if (
-            data.items.length ===
-            1
+            data.items.length === 1
         ) {
             setData(
                 'items',
@@ -643,20 +672,35 @@ export default function CreatePpmp({
         };
 
     return (
-        <AppLayout breadcrumbs={ breadcrumbs }>
+        <AppLayout
+            breadcrumbs={
+                breadcrumbs
+            }
+        >
             <Head title="Create PPMP" />
-            <form onSubmit={submit} className="pms-page bg-background">
+
+            <form
+                onSubmit={submit}
+                className="pms-page bg-background"
+            >
                 {/* PAGE HEADER */}
-                <PageHeader eyebrow="Procurement Planning" title="Create PPMP"
-                    description="Create a Project Procurement Management Plan and save the initial record as a draft."
-                    icon={ ClipboardList }
+                <PageHeader
+                    eyebrow="Procurement Planning"
+                    title="Create PPMP"
+                    description="Create Indicative No. 1 of the Project Procurement Management Plan and save the initial record as a draft."
+                    icon={
+                        ClipboardList
+                    }
                     actions={
                         <div className="min-w-[180px] text-right">
                             <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                 Current Total Budget
                             </div>
+
                             <div className="mt-1 text-2xl font-bold tabular-nums text-primary">
-                                {formatCurrency(totalBudget,)}
+                                {formatCurrency(
+                                    totalBudget,
+                                )}
                             </div>
                         </div>
                     }
@@ -664,31 +708,53 @@ export default function CreatePpmp({
 
                 <div className="mx-auto w-full max-w-[1680px] p-4 md:p-6">
                     <section className="border border-border bg-card">
-                        <div className="grid border-b border-border bg-secondary/25 md:grid-cols-4">
-                            <div className="border-b border-border px-4 py-3 md:border-b-0 md:border-r">
+
+                        {/* PPMP REFERENCE BAR */}
+                        <div className="grid border-b border-border bg-secondary/25 sm:grid-cols-2 xl:grid-cols-5">
+                            <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                     End-User Unit
                                 </div>
+
                                 <div className="mt-1 text-sm font-bold text-primary">
                                     {office.code}
                                 </div>
                             </div>
 
-                            <div className="border-b border-border px-4 py-3 md:border-b-0 md:border-r">
+                            <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
                                 <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                     Fiscal Year
                                 </div>
+
                                 <div className="mt-1 text-sm font-bold">
-                                    {data.fiscal_year}
+                                    {
+                                        data.fiscal_year
+                                    }
                                 </div>
                             </div>
 
-                            <div className="border-b border-border px-4 py-3 md:border-b-0 md:border-r">
+                            <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                     PPMP Type
                                 </div>
-                                <div className="mt-1 text-sm font-bold capitalize">
-                                    {data.plan_type}
+
+                                <div className="mt-1 text-sm font-bold text-blue-700 dark:text-blue-300">
+                                    {planType ===
+                                    'indicative'
+                                        ? 'Indicative'
+                                        : planType}
+                                </div>
+                            </div>
+
+                            <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
+                                <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                                    Indicative No.
+                                </div>
+
+                                <div className="mt-1 text-sm font-bold text-primary">
+                                    {
+                                        indicativeNo
+                                    }
                                 </div>
                             </div>
 
@@ -696,14 +762,22 @@ export default function CreatePpmp({
                                 <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                     Status
                                 </div>
+
                                 <div className="mt-1">
                                     <StatusBadge status="draft" />
                                 </div>
                             </div>
                         </div>
 
+                        {/* WORKSPACE TABS */}
                         <div className="grid border-b border-border sm:grid-cols-3">
-                            <button type="button" onClick={() => setActiveTab('information',)}
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setActiveTab(
+                                        'information',
+                                    )
+                                }
                                 className={`relative flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left sm:border-r ${
                                     activeTab ===
                                     'information'
@@ -711,7 +785,8 @@ export default function CreatePpmp({
                                         : 'border-b-transparent bg-card hover:bg-secondary/30'
                                 }`}
                             >
-                                <div className={`flex size-8 shrink-0 items-center justify-center border ${
+                                <div
+                                    className={`flex size-8 shrink-0 items-center justify-center border ${
                                         activeTab ===
                                         'information'
                                             ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300'
@@ -725,13 +800,15 @@ export default function CreatePpmp({
                                     <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                         Step 01
                                     </div>
+
                                     <div className="mt-0.5 text-sm font-bold">
                                         PPMP Information
                                     </div>
                                 </div>
                             </button>
 
-                            <button type="button"
+                            <button
+                                type="button"
                                 onClick={() =>
                                     setActiveTab(
                                         'items',
@@ -744,7 +821,8 @@ export default function CreatePpmp({
                                         : 'border-b-transparent bg-card hover:bg-secondary/30'
                                 }`}
                             >
-                                <div className={`flex size-8 shrink-0 items-center justify-center border ${
+                                <div
+                                    className={`flex size-8 shrink-0 items-center justify-center border ${
                                         activeTab ===
                                         'items'
                                             ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
@@ -760,18 +838,23 @@ export default function CreatePpmp({
                                             <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                                 Step 02
                                             </div>
+
                                             <div className="mt-0.5 text-sm font-bold">
                                                 Procurement Items
                                             </div>
                                         </div>
+
                                         <span className="text-lg font-bold tabular-nums text-emerald-600">
-                                            { meaningfulItems.length }
+                                            {
+                                                meaningfulItems.length
+                                            }
                                         </span>
                                     </div>
                                 </div>
                             </button>
 
-                            <button type="button"
+                            <button
+                                type="button"
                                 onClick={() =>
                                     setActiveTab(
                                         'signatories',
@@ -784,7 +867,8 @@ export default function CreatePpmp({
                                         : 'border-b-transparent bg-card hover:bg-secondary/30'
                                 }`}
                             >
-                                <div className={`flex size-8 shrink-0 items-center justify-center border ${
+                                <div
+                                    className={`flex size-8 shrink-0 items-center justify-center border ${
                                         activeTab ===
                                         'signatories'
                                             ? 'border-violet-300 bg-violet-100 text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300'
@@ -798,6 +882,7 @@ export default function CreatePpmp({
                                     <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
                                         Step 03
                                     </div>
+
                                     <div className="mt-0.5 text-sm font-bold">
                                         Signatories
                                     </div>
@@ -806,28 +891,34 @@ export default function CreatePpmp({
                         </div>
 
                         <div className="min-h-[440px]">
+
+                            {/* INFORMATION */}
                             {activeTab ===
                                 'information' && (
                                 <div className="grid xl:grid-cols-[minmax(0,1fr)_340px]">
                                     <div className="border-b border-border xl:border-b-0 xl:border-r">
+
                                         <div className="border-b border-border bg-blue-50/40 px-5 py-4 dark:bg-blue-950/10">
                                             <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-blue-700 dark:text-blue-300">
                                                 Basic Information
                                             </div>
+
                                             <h2 className="mt-1 text-base font-bold">
                                                 PPMP Information
                                             </h2>
+
                                             <p className="mt-1 text-xs text-muted-foreground">
-                                                Configure the fiscal year and type of procurement plan.
+                                                Configure the fiscal year. PPMP type and Indicative number are assigned automatically by the system.
                                             </p>
                                         </div>
 
                                         <div className="grid md:grid-cols-2">
+
+                                            {/* FISCAL YEAR */}
                                             <div className="border-b border-border p-5 md:border-r">
                                                 <div className="pms-field">
                                                     <Label htmlFor="fiscal_year">
-                                                        Fiscal
-                                                        Year
+                                                        Fiscal Year
                                                     </Label>
 
                                                     <Input
@@ -864,55 +955,42 @@ export default function CreatePpmp({
                                                 </div>
                                             </div>
 
-                                            {/* TYPE */}
-                                            <div className="border-b border-border p-5">
-                                                <div className="pms-field">
-                                                    <Label htmlFor="plan_type">
-                                                        PPMP
-                                                        Type
-                                                    </Label>
+                                            {/* PPMP TYPE - SYSTEM CONTROLLED */}
+                                            <div className="border-b border-border bg-blue-50/20 p-5 dark:bg-blue-950/10">
+                                                <div className="pms-readonly-label">
+                                                    PPMP Type
+                                                </div>
 
-                                                    <select
-                                                        id="plan_type"
-                                                        value={
-                                                            data.plan_type
-                                                        }
-                                                        onChange={(
-                                                            event,
-                                                        ) =>
-                                                            setData(
-                                                                'plan_type',
-                                                                event
-                                                                    .target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        className="h-9 w-full border border-input bg-background px-3 text-sm"
-                                                        required
-                                                    >
-                                                        <option value="indicative">
-                                                            Indicative
-                                                        </option>
+                                                <div className="mt-2 text-lg font-bold text-blue-700 dark:text-blue-300">
+                                                    Indicative
+                                                </div>
 
-                                                        <option value="final">
-                                                            Final
-                                                        </option>
-                                                    </select>
+                                                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                    Controlled automatically by the system. PPMP Coordinators cannot manually create a Final PPMP.
+                                                </div>
+                                            </div>
 
-                                                    <InputError
-                                                        message={
-                                                            errors.plan_type
-                                                        }
-                                                    />
+                                            {/* INDICATIVE NUMBER */}
+                                            <div className="border-b border-border bg-emerald-50/20 p-5 md:border-r dark:bg-emerald-950/10">
+                                                <div className="pms-readonly-label">
+                                                    Indicative No.
+                                                </div>
+
+                                                <div className="mt-2 text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                                    {
+                                                        indicativeNo
+                                                    }
+                                                </div>
+
+                                                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                    This is the initial Indicative version of the PPMP series.
                                                 </div>
                                             </div>
 
                                             {/* OFFICE */}
-                                            <div className="border-b border-border bg-blue-50/25 p-5 md:border-r dark:bg-blue-950/10">
+                                            <div className="border-b border-border bg-blue-50/25 p-5 dark:bg-blue-950/10">
                                                 <div className="pms-readonly-label">
-                                                    End-User /
-                                                    Implementing
-                                                    Unit
+                                                    End-User / Implementing Unit
                                                 </div>
 
                                                 <div className="mt-2 text-lg font-bold text-blue-700 dark:text-blue-300">
@@ -929,10 +1007,9 @@ export default function CreatePpmp({
                                             </div>
 
                                             {/* COORDINATOR */}
-                                            <div className="border-b border-border bg-violet-50/25 p-5 dark:bg-violet-950/10">
+                                            <div className="border-b border-border bg-violet-50/25 p-5 md:border-r dark:bg-violet-950/10">
                                                 <div className="pms-readonly-label">
-                                                    PPMP
-                                                    Coordinator
+                                                    PPMP Coordinator
                                                 </div>
 
                                                 <div className="mt-2 text-sm font-bold">
@@ -948,29 +1025,17 @@ export default function CreatePpmp({
                                             </div>
 
                                             {/* GENERATED PPMP */}
-                                            <div className="p-5 md:col-span-2">
+                                            <div className="border-b border-border p-5">
                                                 <div className="flex gap-3 border-l-[3px] border-primary bg-primary/5 px-4 py-3">
                                                     <FileText className="mt-0.5 size-4 shrink-0 text-primary" />
 
                                                     <div>
                                                         <div className="text-xs font-bold uppercase tracking-[0.08em] text-primary">
-                                                            PPMP
-                                                            Number
+                                                            PPMP Number
                                                         </div>
 
                                                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                            The
-                                                            official
-                                                            PPMP
-                                                            number
-                                                            will be
-                                                            generated
-                                                            automatically
-                                                            after
-                                                            the
-                                                            draft
-                                                            is
-                                                            saved.
+                                                            The official PPMP number will be generated automatically after the draft is saved.
                                                         </p>
                                                     </div>
                                                 </div>
@@ -986,80 +1051,48 @@ export default function CreatePpmp({
                                             </div>
 
                                             <h3 className="mt-1 text-sm font-bold">
-                                                Creating a
-                                                PPMP
+                                                Creating a PPMP
                                             </h3>
                                         </div>
 
                                         <div className="divide-y divide-border">
                                             <div className="border-l-[3px] border-blue-500 px-5 py-4">
                                                 <div className="text-xs font-bold text-blue-700 dark:text-blue-300">
-                                                    01 ·
-                                                    Information
+                                                    01 · Information
                                                 </div>
 
                                                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                    Confirm
-                                                    the fiscal
-                                                    year,
-                                                    PPMP type,
-                                                    office,
-                                                    and
-                                                    coordinator.
+                                                    Confirm the fiscal year, office, and coordinator. PPMP Type and Indicative No. are assigned automatically.
                                                 </p>
                                             </div>
 
                                             <div className="border-l-[3px] border-emerald-500 px-5 py-4">
                                                 <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                                                    02 ·
-                                                    Procurement
-                                                    Items
+                                                    02 · Procurement Items
                                                 </div>
 
                                                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                    Add the
-                                                    projects,
-                                                    schedules,
-                                                    source of
-                                                    funds, and
-                                                    estimated
-                                                    budget.
+                                                    Add the projects, schedules, source of funds, and estimated budget.
                                                 </p>
                                             </div>
 
                                             <div className="border-l-[3px] border-violet-500 px-5 py-4">
                                                 <div className="text-xs font-bold text-violet-700 dark:text-violet-300">
-                                                    03 ·
-                                                    Signatories
+                                                    03 · Signatories
                                                 </div>
 
                                                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                    Record the
-                                                    personnel
-                                                    information
-                                                    that will
-                                                    appear on
-                                                    the
-                                                    official
-                                                    PPMP.
+                                                    Record the personnel information that will appear on the official PPMP.
                                                 </p>
                                             </div>
 
                                             <div className="border-l-[3px] border-amber-500 bg-amber-50/50 px-5 py-4 dark:bg-amber-950/10">
                                                 <div className="text-xs font-bold text-amber-700 dark:text-amber-300">
-                                                    Supporting
-                                                    Documents
+                                                    Supporting Documents
                                                 </div>
 
                                                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                    Supporting
-                                                    documents
-                                                    can be
-                                                    uploaded
-                                                    after the
-                                                    PPMP draft
-                                                    has been
-                                                    saved.
+                                                    Supporting documents can be uploaded after the PPMP draft has been saved.
                                                 </p>
                                             </div>
                                         </div>
@@ -1074,22 +1107,15 @@ export default function CreatePpmp({
                                     <div className="flex flex-col gap-3 border-b border-border bg-emerald-50/35 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:bg-emerald-950/10">
                                         <div>
                                             <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-emerald-700 dark:text-emerald-300">
-                                                Procurement
-                                                Items
+                                                Procurement Items
                                             </div>
 
                                             <h2 className="mt-1 text-base font-bold">
-                                                Projects /
-                                                Activities
+                                                Projects / Activities
                                             </h2>
 
                                             <p className="mt-1 text-xs text-muted-foreground">
-                                                Add and
-                                                manage
-                                                procurement
-                                                items
-                                                included in
-                                                this PPMP.
+                                                Add and manage procurement items included in this PPMP.
                                             </p>
                                         </div>
 
@@ -1101,28 +1127,13 @@ export default function CreatePpmp({
                                             className="bg-emerald-600 text-white hover:bg-emerald-700"
                                         >
                                             <Plus className="size-4" />
-
-                                            Add
-                                            Procurement
-                                            Item
+                                            Add Procurement Item
                                         </Button>
                                     </div>
 
                                     {hasItemErrors && (
                                         <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                                            One or
-                                            more
-                                            procurement
-                                            items
-                                            contain
-                                            validation
-                                            errors.
-                                            Open the
-                                            affected
-                                            item and
-                                            correct the
-                                            highlighted
-                                            fields.
+                                            One or more procurement items contain validation errors. Open the affected item and correct the highlighted fields.
                                         </div>
                                     )}
 
@@ -1135,20 +1146,11 @@ export default function CreatePpmp({
                                                 </div>
 
                                                 <h3 className="mt-4 text-base font-bold">
-                                                    No
-                                                    procurement
-                                                    items
-                                                    added yet
+                                                    No procurement items added yet
                                                 </h3>
 
                                                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                                                    Add the
-                                                    first
-                                                    project or
-                                                    activity
-                                                    included
-                                                    in this
-                                                    PPMP.
+                                                    Add the first project or activity included in this PPMP.
                                                 </p>
 
                                                 <Button
@@ -1159,9 +1161,7 @@ export default function CreatePpmp({
                                                     className="mt-4 bg-emerald-600 text-white hover:bg-emerald-700"
                                                 >
                                                     <Plus className="size-4" />
-
-                                                    Add First
-                                                    Item
+                                                    Add First Item
                                                 </Button>
                                             </div>
                                         </div>
@@ -1176,24 +1176,19 @@ export default function CreatePpmp({
                                                             </th>
 
                                                             <th className="w-[300px]">
-                                                                Procurement
-                                                                Item
+                                                                Procurement Item
                                                             </th>
 
                                                             <th className="w-[150px]">
-                                                                Project
-                                                                Type
+                                                                Project Type
                                                             </th>
 
                                                             <th className="w-[150px]">
-                                                                Quantity
-                                                                /
-                                                                Size
+                                                                Quantity / Size
                                                             </th>
 
                                                             <th className="w-[180px]">
-                                                                Procurement
-                                                                Mode
+                                                                Procurement Mode
                                                             </th>
 
                                                             <th className="w-[190px]">
@@ -1201,14 +1196,11 @@ export default function CreatePpmp({
                                                             </th>
 
                                                             <th className="w-[150px]">
-                                                                Source
-                                                                of
-                                                                Funds
+                                                                Source of Funds
                                                             </th>
 
                                                             <th className="w-[160px] text-right">
-                                                                Estimated
-                                                                Budget
+                                                                Estimated Budget
                                                             </th>
 
                                                             <th className="w-[120px] text-center">
@@ -1364,8 +1356,7 @@ export default function CreatePpmp({
                                                     {
                                                         meaningfulItems.length
                                                     }{' '}
-                                                    procurement
-                                                    item
+                                                    procurement item
                                                     {meaningfulItems.length ===
                                                     1
                                                         ? ''
@@ -1376,9 +1367,7 @@ export default function CreatePpmp({
                                                 <div className="flex items-center gap-4 border-t border-border px-5 py-4 sm:border-l sm:border-t-0">
                                                     <div className="text-right">
                                                         <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                                                            Total
-                                                            PPMP
-                                                            Budget
+                                                            Total PPMP Budget
                                                         </div>
 
                                                         <div className="mt-1 text-xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
@@ -1388,7 +1377,7 @@ export default function CreatePpmp({
                                                         </div>
                                                     </div>
 
-                                                    <CircleDollarSign className="size-6 text-emerald-600" />
+                                                    {/* <CircleDollarSign className="size-6 text-emerald-600" /> */}
                                                 </div>
                                             </div>
                                         </>
@@ -1406,24 +1395,16 @@ export default function CreatePpmp({
                                         </div>
 
                                         <h2 className="mt-1 text-base font-bold">
-                                            Prepared
-                                            and
-                                            Submitted
-                                            By
+                                            Prepared and Submitted By
                                         </h2>
 
                                         <p className="mt-1 text-xs text-muted-foreground">
-                                            Personnel
-                                            information
-                                            that will
-                                            appear on
-                                            the
-                                            official
-                                            PPMP.
+                                            Personnel information that will appear on the official PPMP.
                                         </p>
                                     </div>
 
                                     <div className="grid md:grid-cols-2">
+
                                         {/* PREPARED */}
                                         <div className="border-b border-border p-5 md:border-b-0 md:border-r md:p-6">
                                             <div className="mb-5 flex items-center gap-3 border-l-[3px] border-blue-500 bg-blue-50/40 px-4 py-3 dark:bg-blue-950/10">
@@ -1433,13 +1414,11 @@ export default function CreatePpmp({
 
                                                 <div>
                                                     <div className="text-sm font-bold">
-                                                        Prepared
-                                                        By
+                                                        Prepared By
                                                     </div>
 
                                                     <div className="mt-0.5 text-xs text-muted-foreground">
-                                                        PPMP
-                                                        Coordinator
+                                                        PPMP Coordinator
                                                     </div>
                                                 </div>
                                             </div>
@@ -1477,9 +1456,7 @@ export default function CreatePpmp({
 
                                                 <div className="pms-field">
                                                     <Label htmlFor="prepared_by_position">
-                                                        Position
-                                                        /
-                                                        Designation
+                                                        Position / Designation
                                                     </Label>
 
                                                     <Input
@@ -1517,14 +1494,11 @@ export default function CreatePpmp({
 
                                                 <div>
                                                     <div className="text-sm font-bold">
-                                                        Submitted
-                                                        By
+                                                        Submitted By
                                                     </div>
 
                                                     <div className="mt-0.5 text-xs text-muted-foreground">
-                                                        Division
-                                                        Chief /
-                                                        Head
+                                                        Division Chief / Head
                                                     </div>
                                                 </div>
                                             </div>
@@ -1532,9 +1506,7 @@ export default function CreatePpmp({
                                             <div className="space-y-5">
                                                 <div className="pms-field">
                                                     <Label htmlFor="submitted_by_name">
-                                                        Division
-                                                        Chief /
-                                                        Head
+                                                        Division Chief / Head
                                                     </Label>
 
                                                     <Input
@@ -1564,9 +1536,7 @@ export default function CreatePpmp({
 
                                                 <div className="pms-field">
                                                     <Label htmlFor="submitted_by_position">
-                                                        Position
-                                                        /
-                                                        Designation
+                                                        Position / Designation
                                                     </Label>
 
                                                     <Input
@@ -1637,7 +1607,6 @@ export default function CreatePpmp({
                                         }
                                     >
                                         <ChevronLeft className="size-4" />
-
                                         Previous
                                     </Button>
                                 )}
@@ -1656,7 +1625,6 @@ export default function CreatePpmp({
                                         }
                                     >
                                         Next
-
                                         <ChevronRight className="size-4" />
                                     </Button>
                                 )}
@@ -1669,14 +1637,13 @@ export default function CreatePpmp({
                 <ActionBar
                     left={
                         <div className="flex items-center gap-4">
-                            <div className="flex size-10 items-center justify-center border border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-400">
+                            {/* <div className="flex size-10 items-center justify-center border border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-400">
                                 <CircleDollarSign className="size-5" />
-                            </div>
+                            </div> */}
 
                             <div>
                                 <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                                    Total PPMP
-                                    Budget
+                                    Total PPMP Budget
                                 </div>
 
                                 <div className="mt-0.5 text-lg font-bold tabular-nums text-primary">
@@ -1726,12 +1693,12 @@ export default function CreatePpmp({
                             }
                             className="absolute inset-y-0 right-0 flex w-full max-w-[720px] flex-col border-l border-border bg-background"
                         >
+
                             {/* EDITOR HEADER */}
                             <div className="flex items-start justify-between gap-4 border-b border-border bg-emerald-50/50 px-5 py-4 dark:bg-emerald-950/15">
                                 <div>
                                     <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-emerald-700 dark:text-emerald-300">
-                                        Procurement
-                                        Item
+                                        Procurement Item
                                     </div>
 
                                     <h2 className="mt-1 text-lg font-bold">
@@ -1742,15 +1709,7 @@ export default function CreatePpmp({
                                     </h2>
 
                                     <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                        Complete
-                                        the project
-                                        details,
-                                        procurement
-                                        schedule,
-                                        funding,
-                                        and
-                                        estimated
-                                        budget.
+                                        Complete the project details, procurement schedule, funding, and estimated budget.
                                     </p>
                                 </div>
 
@@ -1781,6 +1740,7 @@ export default function CreatePpmp({
                                 )}
 
                                 <div className="space-y-6 p-5 md:p-6">
+
                                     {/* GENERAL INFORMATION */}
                                     <section>
                                         <div className="mb-4 border-l-[3px] border-blue-500 pl-3">
@@ -1795,15 +1755,25 @@ export default function CreatePpmp({
 
                                         <div className="space-y-4">
                                             <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <Label
+                                                    htmlFor="item_description"
+                                                    className="flex items-center gap-2 text-base font-semibold text-slate-800"
+                                                >
                                                     <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
                                                         1
                                                     </span>
+
                                                     General Description and Objective
                                                 </Label>
 
-                                                <textarea id="item_description" value={editorItem.description_objective}
-                                                    onChange={( event, ) =>
+                                                <textarea
+                                                    id="item_description"
+                                                    value={
+                                                        editorItem.description_objective
+                                                    }
+                                                    onChange={(
+                                                        event,
+                                                    ) =>
                                                         updateEditorItem(
                                                             'description_objective',
                                                             event
@@ -1828,10 +1798,11 @@ export default function CreatePpmp({
                                             </div>
 
                                             <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
                                                     <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
                                                         2
                                                     </span>
+
                                                     Project Type
                                                 </Label>
 
@@ -1883,7 +1854,6 @@ export default function CreatePpmp({
                                                 )}
                                             </div>
 
-
                                             <div className="pms-field">
                                                 <Label
                                                     htmlFor="quantity_size"
@@ -1892,6 +1862,7 @@ export default function CreatePpmp({
                                                     <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
                                                         3
                                                     </span>
+
                                                     Quantity and Size of the Project to be Procured
                                                 </Label>
 
@@ -1899,32 +1870,42 @@ export default function CreatePpmp({
                                                     List the quantity, unit, item, and relevant specifications. Group items by lot when applicable.
                                                 </p>
 
-                                                <textarea id="quantity_size" value={editorItem.quantity_size}
-                                                            onChange={(event) =>
-                                                                updateEditorItem('quantity_size', event.target.value)
-                                                            }
+                                                <textarea
+                                                    id="quantity_size"
+                                                    value={
+                                                        editorItem.quantity_size
+                                                    }
+                                                    onChange={(
+                                                        event,
+                                                    ) =>
+                                                        updateEditorItem(
+                                                            'quantity_size',
+                                                            event
+                                                                .target
+                                                                .value,
+                                                        )
+                                                    }
                                                     rows={8}
-                                                    placeholder={
-                                                        `Lot 1:
-                                                        38 units Laptop
-                                                        5 units Desktop
-                                                        2 units 2K Lumens Projector
-                                                        1 unit 5K Lumens Projector
+                                                    placeholder={`Lot 1:
+38 units Laptop
+5 units Desktop
+2 units 2K Lumens Projector
+1 unit 5K Lumens Projector
 
-                                                        Lot 2:
-                                                        1 unit Heavy Duty Book Scanner`
-                                                            }
-                                                    className="mt-2 w-full border border-input bg-background px-3 py-2 text-sm outline-none" required
+Lot 2:
+1 unit Heavy Duty Book Scanner`}
+                                                    className="mt-2 w-full border border-input bg-background px-3 py-2 text-sm outline-none"
+                                                    required
                                                 />
                                             </div>
 
-
                                             <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
                                                     <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
                                                         4
                                                     </span>
-                                                        Recommended Mode of Procurement
+
+                                                    Recommended Mode of Procurement
                                                 </Label>
 
                                                 <Input
@@ -1946,10 +1927,11 @@ export default function CreatePpmp({
                                             </div>
 
                                             <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
                                                     <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
                                                         5
                                                     </span>
+
                                                     Pre-Procurement Conference
                                                 </Label>
 
@@ -1981,7 +1963,6 @@ export default function CreatePpmp({
                                                     </option>
                                                 </select>
                                             </div>
-
                                         </div>
                                     </section>
 
@@ -1997,88 +1978,89 @@ export default function CreatePpmp({
                                             </div>
                                         </div>
 
-                                        {/* <div className="grid gap-4 sm:grid-cols-3"> */}
-                                            <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800">
-                                                    <span className="inline-flex h-7 w-7 items-center justify-center bg-amber-600 text-sm font-bold text-white">
-                                                        6
-                                                    </span>
-                                                    Start of Procurement Activity
-                                                </Label>
+                                        <div className="pms-field">
+                                            <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-amber-600 text-sm font-bold text-white">
+                                                    6
+                                                </span>
 
-                                                <Input
-                                                    type="month"
-                                                    value={
-                                                        editorItem.procurement_start_month
-                                                    }
-                                                    onChange={(
-                                                        event,
-                                                    ) =>
-                                                        updateEditorItem(
-                                                            'procurement_start_month',
-                                                            event
-                                                                .target
-                                                                .value,
-                                                        )
-                                                    }
-                                                    className="h-9 w-full border border-input bg-background px-3 text-sm"
-                                                />
-                                            </div>
+                                                Start of Procurement Activity
+                                            </Label>
 
-                                            <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800 mt-3">
-                                                    <span className="inline-flex h-7 w-7 items-center justify-center bg-amber-600 text-sm font-bold text-white">
-                                                        7
-                                                    </span>
-                                                    End of Procurement Activity
-                                                </Label>
+                                            <Input
+                                                type="month"
+                                                value={
+                                                    editorItem.procurement_start_month
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    updateEditorItem(
+                                                        'procurement_start_month',
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                className="h-9 w-full border border-input bg-background px-3 text-sm"
+                                            />
+                                        </div>
 
-                                                <Input
-                                                    type="month"
-                                                    value={
-                                                        editorItem.procurement_end_month
-                                                    }
-                                                    onChange={(
-                                                        event,
-                                                    ) =>
-                                                        updateEditorItem(
-                                                            'procurement_end_month',
-                                                            event
-                                                                .target
-                                                                .value,
-                                                        )
-                                                    }
-                                                    className="h-9 w-full border border-input bg-background px-3 text-sm"
-                                                />
-                                            </div>
+                                        <div className="pms-field">
+                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-amber-600 text-sm font-bold text-white">
+                                                    7
+                                                </span>
 
-                                            <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800 mt-3">
-                                                    <span className="inline-flex h-7 w-7 items-center justify-center bg-amber-600 text-sm font-bold text-white">
-                                                        8
-                                                    </span>
-                                                    Expected Delivery/ Implementation Period
-                                                </Label>
+                                                End of Procurement Activity
+                                            </Label>
 
-                                                <Input
-                                                    type="month"
-                                                    value={
-                                                        editorItem.expected_delivery_month
-                                                    }
-                                                    onChange={(
-                                                        event,
-                                                    ) =>
-                                                        updateEditorItem(
-                                                            'expected_delivery_month',
-                                                            event
-                                                                .target
-                                                                .value,
-                                                        )
-                                                    }
-                                                    className="h-9 w-full border border-input bg-background px-3 text-sm"
-                                                />
-                                            </div>
-                                        {/* </div> */}
+                                            <Input
+                                                type="month"
+                                                value={
+                                                    editorItem.procurement_end_month
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    updateEditorItem(
+                                                        'procurement_end_month',
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                className="h-9 w-full border border-input bg-background px-3 text-sm"
+                                            />
+                                        </div>
+
+                                        <div className="pms-field">
+                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-amber-600 text-sm font-bold text-white">
+                                                    8
+                                                </span>
+
+                                                Expected Delivery / Implementation Period
+                                            </Label>
+
+                                            <Input
+                                                type="month"
+                                                value={
+                                                    editorItem.expected_delivery_month
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    updateEditorItem(
+                                                        'expected_delivery_month',
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                className="h-9 w-full border border-input bg-background px-3 text-sm"
+                                            />
+                                        </div>
                                     </section>
 
                                     {/* FUNDING */}
@@ -2089,130 +2071,125 @@ export default function CreatePpmp({
                                             </div>
 
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Funding
-                                                source and
-                                                estimated
-                                                procurement
-                                                cost.
+                                                Funding source and estimated procurement cost.
                                             </div>
                                         </div>
 
-                                        {/* <div className="grid gap-4 sm:grid-cols-2"> */}
-                                            <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800 ">
-                                                    <span className="inline-flex h-7 w-7 items-center justify-center bg-violet-600 text-sm font-bold text-white">
-                                                        9
-                                                    </span>
-                                                    Source of Funds
-                                                </Label>
+                                        <div className="pms-field">
+                                            <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-violet-600 text-sm font-bold text-white">
+                                                    9
+                                                </span>
+
+                                                Source of Funds
+                                            </Label>
+
+                                            <Input
+                                                value={
+                                                    editorItem.source_of_funds
+                                                }
+                                                onChange={(
+                                                    event,
+                                                ) =>
+                                                    updateEditorItem(
+                                                        'source_of_funds',
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    )
+                                                }
+                                                placeholder="Source of funds"
+                                            />
+                                        </div>
+
+                                        <div className="pms-field">
+                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-violet-600 text-sm font-bold text-white">
+                                                    10
+                                                </span>
+
+                                                Estimated Budget / Authorized Budgetary Allocation (PhP)
+                                            </Label>
+
+                                            <div className="relative">
+                                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">
+                                                    ₱
+                                                </span>
 
                                                 <Input
-                                                    value={
-                                                        editorItem.source_of_funds
-                                                    }
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    className="pl-8 text-right text-base font-bold tabular-nums"
+                                                    value={formatBudgetInput(
+                                                        editorItem.estimated_budget,
+                                                    )}
                                                     onChange={(
                                                         event,
                                                     ) =>
                                                         updateEditorItem(
-                                                            'source_of_funds',
-                                                            event
-                                                                .target
-                                                                .value,
+                                                            'estimated_budget',
+                                                            sanitizeBudgetInput(
+                                                                event
+                                                                    .target
+                                                                    .value,
+                                                            ),
                                                         )
                                                     }
-                                                    placeholder="Source of funds"
+                                                    onBlur={() =>
+                                                        updateEditorItem(
+                                                            'estimated_budget',
+                                                            normalizeBudgetInput(
+                                                                editorItem.estimated_budget,
+                                                            ),
+                                                        )
+                                                    }
+                                                    placeholder="0.00"
                                                 />
                                             </div>
 
-                                            <div className="pms-field">
-                                                <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800 mt-3">
-                                                    <span className="inline-flex h-7 w-7 items-center justify-center bg-violet-600 text-sm font-bold text-white">
-                                                        10
-                                                    </span>
-                                                    Estimated Budget / Authorized Budgetary Allocation (PhP)
-                                                </Label>
-
-                                                <div className="relative">
-                                                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">
-                                                        ₱
-                                                    </span>
-
-                                                    <Input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        className="pl-8 text-right text-base font-bold tabular-nums"
-                                                        value={formatBudgetInput(
-                                                            editorItem.estimated_budget,
-                                                        )}
-                                                        onChange={(
-                                                            event,
-                                                        ) =>
-                                                            updateEditorItem(
-                                                                'estimated_budget',
-                                                                sanitizeBudgetInput(
-                                                                    event
-                                                                        .target
-                                                                        .value,
-                                                                ),
-                                                            )
-                                                        }
-                                                        onBlur={() =>
-                                                            updateEditorItem(
-                                                                'estimated_budget',
-                                                                normalizeBudgetInput(
-                                                                    editorItem.estimated_budget,
-                                                                ),
-                                                            )
-                                                        }
-                                                        placeholder="0.00"
-                                                    />
-                                                </div>
-
-                                                {editingIndex !==
-                                                    null && (
-                                                    <InputError
-                                                        message={errorFor(
-                                                            `items.${editingIndex}.estimated_budget`,
-                                                        )}
-                                                    />
-                                                )}
-                                            </div>
-                                        {/* </div> */}
+                                            {editingIndex !==
+                                                null && (
+                                                <InputError
+                                                    message={errorFor(
+                                                        `items.${editingIndex}.estimated_budget`,
+                                                    )}
+                                                />
+                                            )}
+                                        </div>
                                     </section>
 
-                                    {/* OTHERS */}
+                                    {/* ATTACHMENTS / REMARKS */}
                                     <section className="border-t border-border pt-6">
                                         <div className="mb-4 border-l-[3px] border-sky-500 pl-3">
                                             <div className="text-sm font-bold">
-                                                Attachements and Remarks
+                                                Attachments and Remarks
                                             </div>
 
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Funding
-                                                source and
-                                                estimated
-                                                procurement
-                                                cost.
+                                                Supporting documents and additional procurement notes.
                                             </div>
                                         </div>
+
                                         <div className="pms-field">
-                                            <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800 mt-3">
+                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
                                                 <span className="inline-flex h-7 w-7 items-center justify-center bg-sky-600 text-sm font-bold text-white">
                                                     11
                                                 </span>
+
                                                 Supporting Documents
                                             </Label>
 
                                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
                                                 Supporting documents can be uploaded after this PPMP draft has been saved.
                                             </p>
-
                                         </div>
+
                                         <div className="pms-field">
-                                            <Label htmlFor="item_description" className="flex items-center gap-2 text-base font-semibold text-slate-800 mt-3">
+                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
                                                 <span className="inline-flex h-7 w-7 items-center justify-center bg-sky-600 text-sm font-bold text-white">
                                                     12
                                                 </span>
+
                                                 Remarks
                                             </Label>
 
@@ -2230,9 +2207,7 @@ export default function CreatePpmp({
                                                             .value,
                                                     )
                                                 }
-                                                rows={
-                                                    4
-                                                }
+                                                rows={4}
                                                 placeholder="Optional remarks..."
                                                 className="w-full border border-input bg-background px-3 py-2 text-sm outline-none"
                                             />

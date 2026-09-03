@@ -16,7 +16,7 @@ import {
     CalendarRange,
     CheckCircle2,
     ChevronRight,
-    CircleDollarSign,
+    // CircleDollarSign,
     ClipboardList,
     Download,
     FileText,
@@ -94,16 +94,49 @@ interface Approver {
     name: string;
 }
 
+interface RevisedFrom {
+    id: number;
+    ppmp_no: string;
+    indicative_no: number;
+}
+
+interface PpmpVersion {
+    id: number;
+    ppmp_no: string;
+
+    plan_type: string;
+    indicative_no: number | null;
+    version_label: string;
+
+    status: string;
+    total_budget: string;
+
+    revised_from_ppmp_id: number | null;
+
+    approved_at: string | null;
+    created_at: string | null;
+
+    is_current: boolean;
+}
+
 interface Ppmp {
     id: number;
+    ppmp_series_id: number;
     ppmp_no: string;
 
     fiscal_year: number;
     plan_type: string;
+    indicative_no: number;
+    version_label: string;
 
     status: string;
 
     total_budget: string;
+    original_budget: string | null;
+    series_approved_pr_total: string | null;
+
+    revised_from: RevisedFrom | null;
+    versions: PpmpVersion[];
 
     prepared_by_name: string | null;
     prepared_by_position: string | null;
@@ -138,6 +171,7 @@ interface ShowProps {
         return_for_revision: boolean;
         approve: boolean;
         create_pr: boolean;
+        create_revision: boolean;
     };
 
     flash: {
@@ -215,6 +249,9 @@ function formatAction(
         Record<string, string> = {
         create:
             'Created',
+
+        create_revision:
+            'Created Indicative Revision',
 
         submit:
             'Submitted for Review',
@@ -677,11 +714,94 @@ export default function ShowPpmp({
             null,
         );
 
+    const [
+        revisionProcessing,
+        setRevisionProcessing,
+    ] =
+        useState(false);
+
+    const [
+        revisionError,
+        setRevisionError,
+    ] =
+        useState<string | null>(
+            null,
+        );
+
+    const originalPpmp =
+        ppmp.versions.find(
+            (version) =>
+                version.plan_type ===
+                    'indicative' &&
+                version.indicative_no ===
+                    1,
+        ) ?? null;
+
     const hasWorkflowAction =
         can.submit ||
         can.resubmit ||
         can.return_for_revision ||
         can.approve;
+
+    function createIndicativeRevision() {
+        const nextIndicativeNo =
+            ppmp.indicative_no +
+            1;
+
+        const confirmed =
+            window.confirm(
+                `Create Indicative No. ${nextIndicativeNo} from ${ppmp.ppmp_no}? The approved current version will remain unchanged and a new Draft revision will be created.`,
+            );
+
+        if (!confirmed) {
+            return;
+        }
+
+        router.post(
+            `/ppmps/${ppmp.id}/revisions`,
+            {},
+            {
+                preserveScroll:
+                    true,
+
+                onStart:
+                    () => {
+                        setRevisionProcessing(
+                            true,
+                        );
+
+                        setRevisionError(
+                            null,
+                        );
+                    },
+
+                onFinish:
+                    () => {
+                        setRevisionProcessing(
+                            false,
+                        );
+                    },
+
+                onError:
+                    (
+                        errors,
+                    ) => {
+                        const error =
+                            errors.revision ??
+                            Object.values(
+                                errors,
+                            )[0];
+
+                        setRevisionError(
+                            typeof error ===
+                                'string'
+                                ? error
+                                : 'The new Indicative revision could not be created.',
+                        );
+                    },
+            },
+        );
+    }
 
     function submitPpmp() {
         const confirmed =
@@ -991,6 +1111,25 @@ export default function ShowPpmp({
                                 </Button>
                             )}
 
+                            {can.create_revision && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={
+                                        revisionProcessing
+                                    }
+                                    onClick={
+                                        createIndicativeRevision
+                                    }
+                                >
+                                    <Plus className="size-4" />
+
+                                    {revisionProcessing
+                                        ? 'Creating...'
+                                        : `Create Indicative No. ${ppmp.indicative_no + 1}`}
+                                </Button>
+                            )}
+
                             {can.create_pr && (
                                 <Button
                                     asChild
@@ -1017,10 +1156,18 @@ export default function ShowPpmp({
                     </div>
                 )}
 
+                {revisionError && (
+                    <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700 md:px-6 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                        {
+                            revisionError
+                        }
+                    </div>
+                )}
+
                 <div className="mx-auto w-full max-w-[1680px] p-4 md:p-6">
                     <section className="border border-border bg-card">
                         {/* SUMMARY STRIP */}
-                        <div className="grid border-b border-border bg-secondary/25 sm:grid-cols-2 xl:grid-cols-6">
+                        <div className="grid border-b border-border bg-secondary/25 sm:grid-cols-2 xl:grid-cols-7">
                             <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="pms-readonly-label">
                                     PPMP No.
@@ -1072,6 +1219,18 @@ export default function ShowPpmp({
                             </div>
 
                             <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
+                                <div className="pms-readonly-label">
+                                    Indicative No.
+                                </div>
+
+                                <div className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-300">
+                                    {
+                                        ppmp.indicative_no
+                                    }
+                                </div>
+                            </div>
+
+                            <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
                                 <div className="pms-readonly-label">
                                     Items
                                 </div>
@@ -1506,15 +1665,111 @@ export default function ShowPpmp({
 
                                                 <div className="border-b border-border p-5">
                                                     <div className="pms-readonly-label">
-                                                        PPMP Type
+                                                        PPMP Type and No.
                                                     </div>
 
                                                     <div className="mt-2 text-lg font-bold capitalize">
-                                                        {
-                                                            ppmp.plan_type
-                                                        }
+                                                        {ppmp.plan_type} No. {ppmp.indicative_no}
                                                     </div>
                                                 </div>
+
+                                                {/* <div className="border-b border-border bg-emerald-50/20 p-5 sm:border-r dark:bg-emerald-950/10">
+                                                    <div className="pms-readonly-label">
+                                                        Indicative No.
+                                                    </div>
+
+                                                    <div className="mt-2 text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                                                        {
+                                                            ppmp.indicative_no
+                                                        }
+                                                    </div>
+
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        System-assigned Indicative version number.
+                                                    </div>
+                                                </div> */}
+
+                                                <div className="border-b border-border bg-sky-50/20 p-5 dark:bg-sky-950/10">
+                                                    <div className="pms-readonly-label">
+                                                        Original PPMP No.
+                                                    </div>
+
+                                                    <div className="mt-2 font-bold text-blue-700 dark:text-blue-300">
+                                                        {ppmp.indicative_no >
+                                                            1 &&
+                                                        originalPpmp ? (
+                                                            <Link
+                                                                href={`/ppmps/${originalPpmp.id}`}
+                                                                className="hover:underline"
+                                                            >
+                                                                {
+                                                                    originalPpmp.ppmp_no
+                                                                }
+                                                            </Link>
+                                                        ) : (
+                                                            ppmp.ppmp_no
+                                                        )}
+                                                    </div>
+
+                                                    <div className="mt-1 text-xs text-muted-foreground">
+                                                        {ppmp.indicative_no >
+                                                        1
+                                                            ? 'The first PPMP record in this Indicative series.'
+                                                            : 'This PPMP is the original record of the series.'}
+                                                    </div>
+                                                </div>
+
+                                                {ppmp.indicative_no >
+                                                    1 && (
+                                                    <div className="border-b border-border bg-amber-50/20 p-5 sm:border-r dark:bg-amber-950/10">
+                                                        <div className="pms-readonly-label">
+                                                            Revised From
+                                                        </div>
+
+                                                        <div className="mt-2 font-bold text-amber-700 dark:text-amber-300">
+                                                            {ppmp.revised_from ? (
+                                                                <Link
+                                                                    href={`/ppmps/${ppmp.revised_from.id}`}
+                                                                    className="hover:underline"
+                                                                >
+                                                                    {
+                                                                        ppmp
+                                                                            .revised_from
+                                                                            .ppmp_no
+                                                                    }
+                                                                </Link>
+                                                            ) : (
+                                                                '—'
+                                                            )}
+                                                        </div>
+
+                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                            {ppmp.revised_from
+                                                                ? `Immediate previous version: Indicative No. ${ppmp.revised_from.indicative_no}.`
+                                                                : 'Previous revision information is unavailable.'}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* {ppmp.indicative_no >
+                                                    1 && (
+                                                    <div className="border-b border-border bg-emerald-50/20 p-5 dark:bg-emerald-950/10">
+                                                        <div className="pms-readonly-label">
+                                                            Original PPMP Budget
+                                                        </div>
+
+                                                        <div className="mt-2 text-lg font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                                                            {formatCurrency(
+                                                                ppmp.original_budget ??
+                                                                    ppmp.total_budget,
+                                                            )}
+                                                        </div>
+
+                                                        <div className="mt-1 text-xs text-muted-foreground">
+                                                            Permanent budget established by the approved Indicative No. 1.
+                                                        </div>
+                                                    </div>
+                                                )} */}
 
                                                 <div className="border-b border-border bg-blue-50/20 p-5 sm:border-r dark:bg-blue-950/10">
                                                     <div className="pms-readonly-label">
@@ -1555,7 +1810,7 @@ export default function ShowPpmp({
 
                                                 <div className="p-5 sm:col-span-2">
                                                     <div className="flex items-center gap-4 border-l-[3px] border-emerald-500 bg-emerald-50/30 px-4 py-3 dark:bg-emerald-950/10">
-                                                        <CircleDollarSign className="size-6 text-emerald-600" />
+                                                        {/* <CircleDollarSign className="size-6 text-emerald-600" /> */}
 
                                                         <div>
                                                             <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
@@ -2093,6 +2348,192 @@ export default function ShowPpmp({
                                                         )}
                                                     </tbody>
                                                 </table>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* PPMP VERSION HISTORY */}
+                                    <div className="border-t border-border">
+                                        <div className="flex flex-col gap-3 border-b border-border bg-secondary/25 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <History className="size-4 text-primary" />
+
+                                                <div>
+                                                    <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-primary">
+                                                        PPMP Version History
+                                                    </div>
+
+                                                    <div className="mt-1 text-sm font-bold">
+                                                        Indicative Revisions
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="text-right">
+                                                <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                                                    Original PPMP No.
+                                                </div>
+
+                                                <div className="mt-1 font-bold text-blue-700 dark:text-blue-300">
+                                                    {
+                                                        originalPpmp?.ppmp_no ??
+                                                        ppmp.ppmp_no
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {ppmp.versions.length ===
+                                        0 ? (
+                                            <EmptyState
+                                                icon={
+                                                    History
+                                                }
+                                                title="No PPMP versions recorded"
+                                                description="PPMP revisions belonging to this series will appear here."
+                                            />
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="pms-table min-w-[1000px]">
+                                                    <thead>
+                                                        <tr>
+                                                            <th className="w-[170px]">
+                                                                Version
+                                                            </th>
+
+                                                            <th className="w-[220px]">
+                                                                PPMP No.
+                                                            </th>
+
+                                                            <th className="w-[170px]">
+                                                                Status
+                                                            </th>
+
+                                                            <th className="w-[180px] text-right">
+                                                                Total Budget
+                                                            </th>
+
+                                                            <th className="w-[200px]">
+                                                                Approved
+                                                            </th>
+
+                                                            <th className="w-[130px] text-center">
+                                                                Action
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+
+                                                    <tbody>
+                                                        {ppmp.versions.map(
+                                                            (
+                                                                version,
+                                                            ) => (
+                                                                <tr
+                                                                    key={
+                                                                        version.id
+                                                                    }
+                                                                    className={
+                                                                        version.is_current
+                                                                            ? 'bg-blue-50/30 dark:bg-blue-950/10'
+                                                                            : undefined
+                                                                    }
+                                                                >
+                                                                    <td>
+                                                                        <div className="font-bold">
+                                                                            {
+                                                                                version.version_label
+                                                                            }
+                                                                        </div>
+
+                                                                        {version.is_current && (
+                                                                            <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-blue-700 dark:text-blue-300">
+                                                                                Current Version
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+
+                                                                    <td className="font-bold text-blue-700 dark:text-blue-300">
+                                                                        {
+                                                                            version.ppmp_no
+                                                                        }
+                                                                    </td>
+
+                                                                    <td>
+                                                                        <StatusBadge
+                                                                            status={
+                                                                                version.status
+                                                                            }
+                                                                        />
+                                                                    </td>
+
+                                                                    <td className="text-right font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                                                                        {formatCurrency(
+                                                                            version.total_budget,
+                                                                        )}
+                                                                    </td>
+
+                                                                    <td className="text-xs text-muted-foreground">
+                                                                        {version.approved_at ??
+                                                                            '—'}
+                                                                    </td>
+
+                                                                    <td>
+                                                                        <div className="flex justify-center">
+                                                                            {version.is_current ? (
+                                                                                <span className="text-xs font-semibold text-muted-foreground">
+                                                                                    Viewing
+                                                                                </span>
+                                                                            ) : (
+                                                                                <Button
+                                                                                    variant="outline"
+                                                                                    size="sm"
+                                                                                    asChild
+                                                                                >
+                                                                                    <Link
+                                                                                        href={`/ppmps/${version.id}`}
+                                                                                    >
+                                                                                        View
+                                                                                    </Link>
+                                                                                </Button>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            ),
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+
+                                        {can.create_revision && (
+                                            <div className="flex flex-col gap-3 border-t border-border bg-emerald-50/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:bg-emerald-950/10">
+                                                <div>
+                                                    <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                                        Next Indicative Revision
+                                                    </div>
+
+                                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                        Create Indicative No. {ppmp.indicative_no + 1} from this approved version. The current approved PPMP will remain unchanged.
+                                                    </p>
+                                                </div>
+
+                                                <Button
+                                                    type="button"
+                                                    disabled={
+                                                        revisionProcessing
+                                                    }
+                                                    onClick={
+                                                        createIndicativeRevision
+                                                    }
+                                                    className="bg-emerald-600 text-white hover:bg-emerald-700"
+                                                >
+                                                    <Plus className="size-4" />
+
+                                                    {revisionProcessing
+                                                        ? 'Creating...'
+                                                        : `Create Indicative No. ${ppmp.indicative_no + 1}`}
+                                                </Button>
                                             </div>
                                         )}
                                     </div>
