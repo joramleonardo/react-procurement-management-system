@@ -12,6 +12,8 @@ import {
     useForm,
 } from '@inertiajs/react';
 import {
+    AlertTriangle,
+    CheckCircle2,
     ChevronLeft,
     ChevronRight,
     CircleDollarSign,
@@ -21,6 +23,7 @@ import {
     Pencil,
     Plus,
     Save,
+    Send,
     Trash2,
     UsersRound,
     X,
@@ -32,10 +35,49 @@ import {
     useState,
 } from 'react';
 
+const COMMON_UNITS: readonly string[] = [
+    'piece',
+    'unit',
+    'lot',
+    'set',
+    'box',
+    'pack',
+    'bottle',
+    'ream',
+    'roll',
+    'pad',
+    'can',
+    'tube',
+    'pouch',
+    'bundle',
+    'pair',
+    'meter',
+    'kilogram',
+    'liter',
+    'carton',
+    'package',
+    'license',
+    'copy',
+    'pax',
+    'month',
+    'year',
+];
+
 type Office = {
     id: number;
     code: string;
     name: string;
+};
+
+type PpmpSourceDetail = {
+    id: number;
+    project_type: string | null;
+    quantity: string | null;
+    unit: string | null;
+    item_description: string | null;
+    size_specification: string | null;
+    estimated_amount: string | null;
+    sort_order: number;
 };
 
 type PpmpSourceItem = {
@@ -48,6 +90,12 @@ type PpmpSourceItem = {
     estimated_budget: string;
     approved_pr_amount: string;
     remaining_balance: string;
+
+    /*
+     * Structured Item No. 2 + Item No. 3 entries
+     * belonging to this exact historical PPMP item.
+     */
+    details: PpmpSourceDetail[];
 };
 
 type Ppmp = {
@@ -64,6 +112,7 @@ type Ppmp = {
 
 type Defaults = {
     entity_name: string;
+    fund_cluster?: string;
     pr_date: string;
 
     requested_by_name: string;
@@ -79,7 +128,17 @@ type CreateProps = {
 };
 
 type PrItemForm = {
+    /*
+     * Exact historical PPMP parent item.
+     */
     ppmp_item_id: string;
+
+    /*
+     * Exact historical Item No. 2 + Item No. 3
+     * child requirement.
+     */
+    ppmp_item_detail_id: string;
+
     stock_property_no: string;
     unit: string;
     item_description: string;
@@ -102,6 +161,7 @@ type PurchaseRequestFormData = {
     approved_by_designation: string;
 
     items: PrItemForm[];
+    action?: 'draft' | 'submit';
 };
 
 type PrItemField = keyof PrItemForm;
@@ -114,6 +174,7 @@ type CreateTab =
 function createEmptyItem(): PrItemForm {
     return {
         ppmp_item_id: '',
+        ppmp_item_detail_id: '',
         stock_property_no: '',
         unit: '',
         item_description: '',
@@ -127,6 +188,7 @@ function isItemBlank(
 ): boolean {
     return (
         !item.ppmp_item_id &&
+        !item.ppmp_item_detail_id &&
         !item.stock_property_no &&
         !item.unit &&
         !item.item_description &&
@@ -269,6 +331,76 @@ function sanitizeQuantityInput(
     return whole;
 }
 
+function detailDescription(
+    detail: PpmpSourceDetail,
+): string {
+    const description =
+        detail.item_description?.trim() ??
+        '';
+
+    const specification =
+        detail.size_specification?.trim() ??
+        '';
+
+    if (
+        description &&
+        specification
+    ) {
+        return `${description} — ${specification}`;
+    }
+
+    return (
+        description ||
+        specification
+    );
+}
+
+function detailQuantityLabel(
+    detail: PpmpSourceDetail,
+): string {
+    return [
+        detail.quantity?.trim() ??
+            '',
+        detail.unit?.trim() ?? '',
+    ]
+        .filter(Boolean)
+        .join(' ');
+}
+
+/*
+ * Item No. 10 stores a detail TOTAL amount.
+ * When quantity is available, derive only a
+ * suggested PR unit cost from total / quantity.
+ */
+function suggestedUnitCost(
+    detail: PpmpSourceDetail,
+): string {
+    const total =
+        detail.estimated_amount
+            ? parseNumber(
+                  detail.estimated_amount,
+              )
+            : 0;
+
+    const quantity =
+        detail.quantity
+            ? parseNumber(
+                  detail.quantity,
+              )
+            : 0;
+
+    if (
+        total <= 0 ||
+        quantity <= 0
+    ) {
+        return '';
+    }
+
+    return (
+        total / quantity
+    ).toFixed(2);
+}
+
 function shortDescription(
     value: string,
     length = 70,
@@ -309,18 +441,34 @@ export default function CreatePurchaseRequest({
         },
     ];
 
+    const fundSources = Array.from(
+        new Set(
+            ppmp.items
+                .map((item) => item.source_of_funds?.trim())
+                .filter((val): val is string => Boolean(val)),
+        ),
+    );
+
+    const defaultFundCluster =
+        defaults.fund_cluster ||
+        ppmp.items.find((item) => Boolean(item.source_of_funds?.trim()))?.source_of_funds?.trim() ||
+        '';
+
     const {
         data,
         setData,
         post,
         processing,
         errors,
+        setError,
+        clearErrors,
+        transform,
     } =
         useForm<PurchaseRequestFormData>({
             entity_name:
                 defaults.entity_name,
 
-            fund_cluster: '',
+            fund_cluster: defaultFundCluster,
 
             responsibility_center_code:
                 '',
@@ -384,6 +532,24 @@ export default function CreatePurchaseRequest({
         useState<string | null>(
             null,
         );
+
+    const [
+        customUnitMode,
+        setCustomUnitMode,
+    ] = useState(false);
+
+    const unitOptions = useMemo(() => {
+        const trimmed = editorItem.unit?.trim();
+        if (
+            trimmed &&
+            !COMMON_UNITS.some(
+                (u) => u.toLowerCase() === trimmed.toLowerCase(),
+            )
+        ) {
+            return [trimmed, ...COMMON_UNITS];
+        }
+        return [...COMMON_UNITS];
+    }, [editorItem.unit]);
 
     const lineTotals =
         useMemo(
@@ -507,6 +673,28 @@ export default function CreatePurchaseRequest({
         );
     }
 
+    function detailFor(
+        ppmpItemId: string,
+        detailId: string,
+    ):
+        | PpmpSourceDetail
+        | undefined {
+        const source =
+            sourceFor(
+                ppmpItemId,
+            );
+
+        return source
+            ?.details
+            .find(
+                (detail) =>
+                    String(
+                        detail.id,
+                    ) ===
+                    detailId,
+            );
+    }
+
     function errorFor(
         key: string,
     ): string | undefined {
@@ -603,7 +791,7 @@ export default function CreatePurchaseRequest({
                 'information',
             );
         }
-    }, [errors]);
+    }, [errors, data.items]);
 
     function updateEditorItem<
         K extends PrItemField,
@@ -626,28 +814,111 @@ export default function CreatePurchaseRequest({
         );
     }
 
-    function selectEditorPpmpItem(
-        value: string,
+    function selectEditorPpmpDetail(
+        detailId: string,
     ) {
-        const source =
-            sourceFor(
-                value,
+        const selected =
+            ppmp.items
+                .flatMap(
+                    (sourceItem) =>
+                        sourceItem.details.map(
+                            (detail) => ({
+                                sourceItem,
+                                detail,
+                            }),
+                        ),
+                )
+                .find(
+                    ({ detail }) =>
+                        String(
+                            detail.id,
+                        ) ===
+                        detailId,
+                );
+
+        if (!selected) {
+            setEditorItem(
+                (current) => ({
+                    ...current,
+
+                    ppmp_item_id:
+                        '',
+
+                    ppmp_item_detail_id:
+                        '',
+
+                    unit: '',
+                    item_description:
+                        '',
+                    quantity: '',
+                    unit_cost: '',
+                }),
             );
 
+            setEditorError(
+                null,
+            );
+
+            return;
+        }
+
+        const {
+            sourceItem,
+            detail,
+        } = selected;
+
+        if (!data.fund_cluster.trim() && sourceItem.source_of_funds) {
+            setData('fund_cluster', sourceItem.source_of_funds);
+        }
+
         setEditorItem(
-            (
-                current,
-            ) => ({
+            (current) => ({
                 ...current,
 
                 ppmp_item_id:
-                    value,
+                    String(
+                        sourceItem.id,
+                    ),
+
+                ppmp_item_detail_id:
+                    String(
+                        detail.id,
+                    ),
+
+                /*
+                 * Auto-populate the PR fields from the
+                 * exact approved PPMP requirement.
+                 *
+                 * These fields remain editable because
+                 * the actual PR may contain final purchase
+                 * descriptions/costs.
+                 */
+                unit:
+                    detail.unit ??
+                    '',
 
                 item_description:
-                    current.item_description ||
-                    source
-                        ?.description_objective ||
+                    detailDescription(
+                        detail,
+                    ) ||
+                    sourceItem.description_objective,
+
+                quantity:
+                    detail.quantity ??
                     '',
+
+                /*
+                 * Detailed costing:
+                 * derive a suggested unit cost.
+                 *
+                 * Fallback costing:
+                 * estimated_amount is NULL, so leave
+                 * Unit Cost blank for the user.
+                 */
+                unit_cost:
+                    suggestedUnitCost(
+                        detail,
+                    ),
             }),
         );
 
@@ -664,6 +935,8 @@ export default function CreatePurchaseRequest({
         setEditorItem(
             createEmptyItem(),
         );
+
+        setCustomUnitMode(false);
 
         setEditorError(
             null,
@@ -694,6 +967,8 @@ export default function CreatePurchaseRequest({
             ...item,
         });
 
+        setCustomUnitMode(false);
+
         setEditorError(
             null,
         );
@@ -712,6 +987,8 @@ export default function CreatePurchaseRequest({
             null,
         );
 
+        setCustomUnitMode(false);
+
         setEditorError(
             null,
         );
@@ -719,10 +996,11 @@ export default function CreatePurchaseRequest({
 
     function saveEditorItem() {
         if (
-            !editorItem.ppmp_item_id
+            !editorItem.ppmp_item_id ||
+            !editorItem.ppmp_item_detail_id
         ) {
             setEditorError(
-                'Please select the source PPMP item.',
+                'Please select the exact PPMP Project / Requirement entry.',
             );
 
             return;
@@ -879,6 +1157,12 @@ export default function CreatePurchaseRequest({
             editorItem.ppmp_item_id,
         );
 
+    const editorDetail =
+        detailFor(
+            editorItem.ppmp_item_id,
+            editorItem.ppmp_item_detail_id,
+        );
+
     let editorProjectedUsage =
         editorItem.ppmp_item_id
             ? draftUsageBySource[
@@ -923,18 +1207,120 @@ export default function CreatePurchaseRequest({
         editorProjectedUsage >
             editorRemaining;
 
+    const editorParentBudget =
+        editorSource
+            ? parseNumber(
+                  editorSource.estimated_budget,
+              )
+            : 0;
+
+    const editorApprovedUsed =
+        editorSource
+            ? parseNumber(
+                  editorSource.approved_pr_amount,
+              )
+            : 0;
+
+    const editorNetRemaining =
+        editorRemaining -
+        editorProjectedUsage;
+
+    const editorPercentApproved =
+        editorParentBudget > 0
+            ? (editorApprovedUsed /
+                  editorParentBudget) *
+              100
+            : 0;
+
+    const editorPercentDraft =
+        editorParentBudget > 0
+            ? (editorProjectedUsage /
+                  editorParentBudget) *
+              100
+            : 0;
+
+    const editorPercentTotal =
+        editorPercentApproved +
+        editorPercentDraft;
+
+    const editorPlannedQty =
+        editorDetail?.quantity
+            ? parseNumber(
+                  editorDetail.quantity,
+              )
+            : null;
+
+    const editorCurrentQty =
+        parseNumber(
+            editorItem.quantity,
+        );
+
+    const editorQtyExceeded =
+        editorPlannedQty !== null &&
+        editorPlannedQty > 0 &&
+        editorCurrentQty >
+            editorPlannedQty;
+
+    const editorQtyUnder =
+        editorPlannedQty !== null &&
+        editorPlannedQty > 0 &&
+        editorCurrentQty > 0 &&
+        editorCurrentQty <
+            editorPlannedQty;
+
+    const handleSave = (targetAction: 'draft' | 'submit') => {
+        clearErrors();
+        if (targetAction === 'submit') {
+            if (!data.purpose.trim()) {
+                setActiveTab('information');
+                setError('purpose', 'Purpose of Purchase Request is required before submitting.');
+                return;
+            }
+
+            if (!data.requested_by_name.trim()) {
+                setActiveTab('signatories');
+                setError('requested_by_name', 'Requested By name is required before submitting.');
+                return;
+            }
+
+            if (!data.requested_by_designation.trim()) {
+                setActiveTab('signatories');
+                setError('requested_by_designation', 'Requested By designation is required before submitting.');
+                return;
+            }
+
+            const validItems = data.items.filter((item) => !isItemBlank(item));
+            if (validItems.length === 0) {
+                setActiveTab('items');
+                setError('items', 'At least one item is required before submitting.');
+                return;
+            }
+
+            const confirmed = window.confirm(
+                'Submit this Purchase Request for GSPS review? It will be locked while under review.'
+            );
+            if (!confirmed) return;
+        }
+
+        transform((formData) => ({
+            ...formData,
+            action: targetAction,
+        }));
+
+        post(
+            `/ppmps/${ppmp.id}/purchase-requests`,
+            {
+                preserveScroll:
+                    true,
+            },
+        );
+    };
+
     const submit:
         FormEventHandler<HTMLFormElement> =
         (event) => {
             event.preventDefault();
-
-            post(
-                `/ppmps/${ppmp.id}/purchase-requests`,
-                {
-                    preserveScroll:
-                        true,
-                },
-            );
+            handleSave('draft');
         };
 
     return (
@@ -1241,12 +1627,20 @@ export default function CreatePurchaseRequest({
                                             {/* FUND CLUSTER */}
                                             <div className="border-b border-border p-5 xl:border-r">
                                                 <div className="pms-field">
-                                                    <Label htmlFor="fund_cluster">
-                                                        Fund Cluster
-                                                    </Label>
+                                                    <div className="flex items-center justify-between">
+                                                        <Label htmlFor="fund_cluster">
+                                                            Fund Cluster
+                                                        </Label>
+                                                        {fundSources.length > 0 && (
+                                                            <span className="text-[11px] text-muted-foreground">
+                                                                Defaulted from Source of Funds
+                                                            </span>
+                                                        )}
+                                                    </div>
 
                                                     <Input
                                                         id="fund_cluster"
+                                                        list="ppmp-fund-options"
                                                         value={
                                                             data.fund_cluster
                                                         }
@@ -1262,6 +1656,14 @@ export default function CreatePurchaseRequest({
                                                         }
                                                         placeholder="Enter fund cluster"
                                                     />
+
+                                                    {fundSources.length > 0 && (
+                                                        <datalist id="ppmp-fund-options">
+                                                            {fundSources.map((fund) => (
+                                                                <option key={fund} value={fund} />
+                                                            ))}
+                                                        </datalist>
+                                                    )}
 
                                                     <InputError
                                                         message={
@@ -1293,9 +1695,14 @@ export default function CreatePurchaseRequest({
                                             {/* RESPONSIBILITY */}
                                             <div className="border-b border-border p-5 md:border-r">
                                                 <div className="pms-field">
-                                                    <Label htmlFor="responsibility_center_code">
-                                                        Responsibility Center Code
-                                                    </Label>
+                                                    <div className="flex items-center justify-between">
+                                                        <Label htmlFor="responsibility_center_code">
+                                                            Responsibility Center Code
+                                                        </Label>
+                                                        <span className="text-[11px] text-muted-foreground">
+                                                            (Optional)
+                                                        </span>
+                                                    </div>
 
                                                     <Input
                                                         id="responsibility_center_code"
@@ -1312,7 +1719,7 @@ export default function CreatePurchaseRequest({
                                                                     .value,
                                                             )
                                                         }
-                                                        placeholder="Enter responsibility center code"
+                                                        placeholder="Optional (e.g. 19-001-00-00000)"
                                                     />
 
                                                     <InputError
@@ -1391,7 +1798,7 @@ export default function CreatePurchaseRequest({
                                                         </Link>
 
                                                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                            Every PR item must reference an approved procurement item from this PPMP.
+                                                            Every PR item must reference an exact approved Project / Requirement entry from this PPMP.
                                                         </p>
                                                     </div>
                                                 </div>
@@ -1481,7 +1888,7 @@ export default function CreatePurchaseRequest({
                                             </h2>
 
                                             <p className="mt-1 text-xs text-muted-foreground">
-                                                Select an approved PPMP item as the budget source for every PR line.
+                                                Select the exact approved PPMP Project / Requirement entry for every PR line.
                                             </p>
                                         </div>
 
@@ -1511,7 +1918,7 @@ export default function CreatePurchaseRequest({
                                                 </h3>
 
                                                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                                                    Add the first item and assign it to an available approved PPMP budget source.
+                                                    Add the first item and select its exact approved PPMP Project / Requirement entry.
                                                 </p>
 
                                                 <Button
@@ -1541,8 +1948,8 @@ export default function CreatePurchaseRequest({
                                                                 PR Item
                                                             </th>
 
-                                                            <th className="w-[250px]">
-                                                                PPMP Source
+                                                            <th className="w-[330px]">
+                                                                PPMP Project / Requirement
                                                             </th>
 
                                                             <th className="w-[110px]">
@@ -1581,6 +1988,12 @@ export default function CreatePurchaseRequest({
                                                                         item.ppmp_item_id,
                                                                     );
 
+                                                                const detail =
+                                                                    detailFor(
+                                                                        item.ppmp_item_id,
+                                                                        item.ppmp_item_detail_id,
+                                                                    );
+
                                                                 const usage =
                                                                     item.ppmp_item_id
                                                                         ? draftUsageBySource[
@@ -1601,6 +2014,26 @@ export default function CreatePurchaseRequest({
                                                                         undefined &&
                                                                     usage >
                                                                         remaining;
+
+                                                                const plannedQty =
+                                                                    detail?.quantity
+                                                                        ? parseNumber(
+                                                                              detail.quantity,
+                                                                          )
+                                                                        : null;
+
+                                                                const itemQty =
+                                                                    parseNumber(
+                                                                        item.quantity,
+                                                                    );
+
+                                                                const qtyExceeded =
+                                                                    plannedQty !==
+                                                                        null &&
+                                                                    plannedQty >
+                                                                        0 &&
+                                                                    itemQty >
+                                                                        plannedQty;
 
                                                                 return (
                                                                     <tr
@@ -1640,19 +2073,50 @@ export default function CreatePurchaseRequest({
                                                                         </td>
 
                                                                         <td>
-                                                                            {source ? (
+                                                                            {source &&
+                                                                            detail ? (
                                                                                 <div>
                                                                                     <div className="font-semibold text-foreground">
                                                                                         #
                                                                                         {
                                                                                             source.sort_order
+                                                                                        }
+                                                                                        .
+                                                                                        {
+                                                                                            detail.sort_order
                                                                                         }{' '}
                                                                                         ·{' '}
+                                                                                        {
+                                                                                            detail.project_type ??
+                                                                                            'Project / Requirement'
+                                                                                        }
+                                                                                    </div>
+
+                                                                                    <div className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                                                                                        {detailQuantityLabel(
+                                                                                            detail,
+                                                                                        ) ||
+                                                                                            'Quantity not specified'}
+                                                                                        {' · '}
                                                                                         {shortDescription(
-                                                                                            source.description_objective,
-                                                                                            42,
+                                                                                            detailDescription(
+                                                                                                detail,
+                                                                                            ) ||
+                                                                                                source.description_objective,
+                                                                                            55,
                                                                                         )}
                                                                                     </div>
+
+                                                                                    {detail.estimated_amount && (
+                                                                                        <div className="mt-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                                                                                            PPMP
+                                                                                            detail
+                                                                                            estimate:{' '}
+                                                                                            {formatCurrency(
+                                                                                                detail.estimated_amount,
+                                                                                            )}
+                                                                                        </div>
+                                                                                    )}
 
                                                                                     <div
                                                                                         className={`mt-1 text-[10px] font-semibold ${
@@ -1661,7 +2125,8 @@ export default function CreatePurchaseRequest({
                                                                                                 : 'text-emerald-600'
                                                                                         }`}
                                                                                     >
-                                                                                        Remaining:{' '}
+                                                                                        Parent
+                                                                                        remaining:{' '}
                                                                                         {formatCurrency(
                                                                                             source.remaining_balance,
                                                                                         )}
@@ -1678,8 +2143,19 @@ export default function CreatePurchaseRequest({
                                                                         </td>
 
                                                                         <td className="text-right tabular-nums">
-                                                                            {item.quantity ||
-                                                                                '—'}
+                                                                            <div>
+                                                                                {item.quantity ||
+                                                                                    '—'}
+                                                                            </div>
+                                                                            {qtyExceeded && (
+                                                                                <span
+                                                                                    className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                                                                                    title={`Exceeds planned PPMP requirement quantity (${plannedQty} ${detail?.unit || ''})`}
+                                                                                >
+                                                                                    <AlertTriangle className="size-2.5 shrink-0" />
+                                                                                    <span>&gt; PPMP ({plannedQty})</span>
+                                                                                </span>
+                                                                            )}
                                                                         </td>
 
                                                                         <td className="text-right tabular-nums">
@@ -1814,7 +2290,8 @@ export default function CreatePurchaseRequest({
 
                                             <div className="pms-field">
                                                 <Label htmlFor="purpose">
-                                                    Purpose of Purchase Request
+                                                    Purpose of Purchase Request{' '}
+                                                    <span className="text-destructive">*</span>
                                                 </Label>
 
                                                 <textarea
@@ -2114,16 +2591,33 @@ export default function CreatePurchaseRequest({
                     </Button>
 
                     <Button
-                        type="submit"
+                        type="button"
+                        variant="outline"
                         disabled={
                             processing
                         }
+                        onClick={() => handleSave('draft')}
                     >
                         <Save className="size-4" />
 
                         {processing
                             ? 'Saving Draft...'
                             : 'Save as Draft'}
+                    </Button>
+
+                    <Button
+                        type="button"
+                        disabled={
+                            processing
+                        }
+                        onClick={() => handleSave('submit')}
+                        className="bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                        <Send className="size-4" />
+
+                        {processing
+                            ? 'Submitting...'
+                            : 'Submit for Review'}
                     </Button>
                 </ActionBar>
 
@@ -2191,31 +2685,31 @@ export default function CreatePurchaseRequest({
                                 )}
 
                                 <div className="space-y-6 p-5 md:p-6">
-                                    {/* SOURCE PPMP ITEM */}
+                                    {/* EXACT PPMP PROJECT / REQUIREMENT */}
                                     <section>
                                         <div className="mb-4 border-l-[3px] border-blue-500 pl-3">
                                             <div className="text-sm font-bold">
-                                                PPMP Budget Source
+                                                PPMP Project / Requirement
                                             </div>
 
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Select the approved PPMP item that will fund this PR line.
+                                                Select the exact approved Item No. 2 + Item No. 3 entry that this PR line originates from.
                                             </div>
                                         </div>
 
                                         <div className="pms-field">
                                             <Label>
-                                                Source PPMP Item
+                                                Approved PPMP Requirement
                                             </Label>
 
                                             <select
                                                 value={
-                                                    editorItem.ppmp_item_id
+                                                    editorItem.ppmp_item_detail_id
                                                 }
                                                 onChange={(
                                                     event,
                                                 ) =>
-                                                    selectEditorPpmpItem(
+                                                    selectEditorPpmpDetail(
                                                         event
                                                             .target
                                                             .value,
@@ -2224,142 +2718,334 @@ export default function CreatePurchaseRequest({
                                                 className="h-10 w-full border border-input bg-background px-3 text-sm"
                                             >
                                                 <option value="">
-                                                    Select approved PPMP item
+                                                    Select exact Project / Requirement
                                                 </option>
 
                                                 {ppmp.items.map(
                                                     (
                                                         sourceItem,
                                                     ) => (
-                                                        <option
+                                                        <optgroup
                                                             key={
                                                                 sourceItem.id
                                                             }
-                                                            value={
-                                                                sourceItem.id
-                                                            }
-                                                            disabled={
-                                                                parseNumber(
-                                                                    sourceItem.remaining_balance,
-                                                                ) <=
-                                                                0 &&
-                                                                String(
-                                                                    sourceItem.id,
-                                                                ) !==
-                                                                    editorItem.ppmp_item_id
-                                                            }
-                                                        >
-                                                            #
-                                                            {
-                                                                sourceItem.sort_order
-                                                            }{' '}
-                                                            —{' '}
-                                                            {shortDescription(
+                                                            label={`PPMP Item #${sourceItem.sort_order} — ${shortDescription(
                                                                 sourceItem.description_objective,
                                                                 55,
-                                                            )}{' '}
-                                                            (
-                                                            {formatCurrency(
+                                                            )} — ${formatCurrency(
                                                                 sourceItem.remaining_balance,
-                                                            )}{' '}
-                                                            remaining)
-                                                        </option>
+                                                            )} remaining`}
+                                                        >
+                                                            {sourceItem.details.length >
+                                                            0 ? (
+                                                                sourceItem.details.map(
+                                                                    (
+                                                                        detail,
+                                                                    ) => (
+                                                                        <option
+                                                                            key={
+                                                                                detail.id
+                                                                            }
+                                                                            value={
+                                                                                detail.id
+                                                                            }
+                                                                            disabled={
+                                                                                parseNumber(
+                                                                                    sourceItem.remaining_balance,
+                                                                                ) <=
+                                                                                    0 &&
+                                                                                String(
+                                                                                    detail.id,
+                                                                                ) !==
+                                                                                    editorItem.ppmp_item_detail_id
+                                                                            }
+                                                                        >
+                                                                            {`#${sourceItem.sort_order}.${detail.sort_order} — ${
+                                                                                detail.project_type ??
+                                                                                'Project'
+                                                                            } — ${
+                                                                                detailQuantityLabel(
+                                                                                    detail,
+                                                                                ) ||
+                                                                                'Qty not specified'
+                                                                            } — ${
+                                                                                shortDescription(
+                                                                                    detailDescription(
+                                                                                        detail,
+                                                                                    ) ||
+                                                                                        sourceItem.description_objective,
+                                                                                    60,
+                                                                                )
+                                                                            }${
+                                                                                detail.estimated_amount
+                                                                                    ? ` — ${formatCurrency(
+                                                                                          detail.estimated_amount,
+                                                                                      )}`
+                                                                                    : ''
+                                                                            }`}
+                                                                        </option>
+                                                                    ),
+                                                                )
+                                                            ) : (
+                                                                <option
+                                                                    value=""
+                                                                    disabled
+                                                                >
+                                                                    No structured Project / Requirement entries
+                                                                </option>
+                                                            )}
+                                                        </optgroup>
                                                     ),
                                                 )}
                                             </select>
 
                                             {editingIndex !==
                                                 null && (
-                                                <InputError
-                                                    message={errorFor(
-                                                        `items.${editingIndex}.ppmp_item_id`,
-                                                    )}
-                                                />
+                                                <>
+                                                    <InputError
+                                                        message={errorFor(
+                                                            `items.${editingIndex}.ppmp_item_detail_id`,
+                                                        )}
+                                                    />
+
+                                                    <InputError
+                                                        message={errorFor(
+                                                            `items.${editingIndex}.ppmp_item_id`,
+                                                        )}
+                                                    />
+                                                </>
                                             )}
                                         </div>
 
-                                        {/* BUDGET PANEL */}
-                                        {editorSource && (
-                                            <div
-                                                className={`mt-4 border ${
-                                                    editorOverBudget
-                                                        ? 'border-red-300 bg-red-50/70 dark:border-red-900 dark:bg-red-950/20'
-                                                        : 'border-blue-200 bg-blue-50/40 dark:border-blue-900 dark:bg-blue-950/10'
-                                                }`}
-                                            >
-                                                <div className="border-b border-current/10 px-4 py-3">
-                                                    <div className="text-xs font-bold">
-                                                        PPMP Item #{editorSource.sort_order}
+                                        {/* SELECTED REQUIREMENT */}
+                                        {editorSource &&
+                                            editorDetail && (
+                                            <div className="mt-4 border border-blue-200 bg-blue-50/40 dark:border-blue-900 dark:bg-blue-950/10">
+                                                <div className="border-b border-border/70 px-4 py-3">
+                                                    <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-blue-700 dark:text-blue-300">
+                                                        Selected PPMP Requirement
+                                                    </div>
+
+                                                    <div className="mt-1 text-sm font-bold">
+                                                        #
+                                                        {
+                                                            editorSource.sort_order
+                                                        }
+                                                        .
+                                                        {
+                                                            editorDetail.sort_order
+                                                        }{' '}
+                                                        ·{' '}
+                                                        {
+                                                            editorDetail.project_type ??
+                                                            'Project / Requirement'
+                                                        }
                                                     </div>
 
                                                     <div className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                        {
-                                                            editorSource.description_objective
-                                                        }
+                                                        {detailQuantityLabel(
+                                                            editorDetail,
+                                                        ) ||
+                                                            'Quantity not specified'}
+                                                        {' · '}
+                                                        {detailDescription(
+                                                            editorDetail,
+                                                        ) ||
+                                                            editorSource.description_objective}
+                                                        {editorSource.source_of_funds && (
+                                                            <>
+                                                                {' · '}
+                                                                <span>Fund: <strong className="font-semibold text-foreground">{editorSource.source_of_funds}</strong></span>
+                                                            </>
+                                                        )}
                                                     </div>
+
+                                                    {editorDetail.estimated_amount && (
+                                                        <div className="mt-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                                            PPMP
+                                                            Detail
+                                                            Estimate:{' '}
+                                                            {formatCurrency(
+                                                                editorDetail.estimated_amount,
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {!editorDetail.estimated_amount && (
+                                                        <div className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                                                            This requirement uses PPMP fallback costing. Unit Cost is not auto-filled.
+                                                        </div>
+                                                    )}
                                                 </div>
 
-                                                <div className="grid grid-cols-2 sm:grid-cols-4">
-                                                    <div className="border-b border-r border-border/70 p-3 sm:border-b-0">
-                                                        <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                                                            PPMP Budget
+                                                {/* PARENT BUDGET PANEL WITH VISUAL CONSUMPTION METER */}
+                                                <div
+                                                    className={`border-t border-border/70 ${
+                                                        editorOverBudget
+                                                            ? 'bg-red-50/70 dark:bg-red-950/20'
+                                                            : 'bg-card'
+                                                    }`}
+                                                >
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4">
+                                                        <div className="border-b border-r border-border/70 p-3 sm:border-b-0">
+                                                            <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                                                                Parent PPMP Budget
+                                                            </div>
+
+                                                            <div className="mt-1 text-xs font-bold tabular-nums">
+                                                                {formatCurrency(
+                                                                    editorSource.estimated_budget,
+                                                                )}
+                                                            </div>
                                                         </div>
 
-                                                        <div className="mt-1 text-xs font-bold tabular-nums">
-                                                            {formatCurrency(
-                                                                editorSource.estimated_budget,
-                                                            )}
+                                                        <div className="border-b border-border/70 p-3 sm:border-b-0 sm:border-r">
+                                                            <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                                                                Approved Used
+                                                            </div>
+
+                                                            <div className="mt-1 text-xs font-bold tabular-nums text-amber-600">
+                                                                {formatCurrency(
+                                                                    editorSource.approved_pr_amount,
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="border-r border-border/70 p-3">
+                                                            <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                                                                Parent Remaining
+                                                            </div>
+
+                                                            <div className="mt-1 text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                                                                {formatCurrency(
+                                                                    editorSource.remaining_balance,
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="p-3">
+                                                            <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                                                                This PR Draft Usage
+                                                            </div>
+
+                                                            <div
+                                                                className={`mt-1 text-xs font-bold tabular-nums ${
+                                                                    editorOverBudget
+                                                                        ? 'text-red-600'
+                                                                        : 'text-violet-700 dark:text-violet-300'
+                                                                }`}
+                                                            >
+                                                                {formatCurrency(
+                                                                    editorProjectedUsage,
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     </div>
 
-                                                    <div className="border-b border-border/70 p-3 sm:border-b-0 sm:border-r">
-                                                        <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                                                            Approved Used
+                                                    {/* VISUAL BUDGET PROGRESS BAR */}
+                                                    <div className="border-t border-border/70 bg-secondary/15 px-4 py-3.5">
+                                                        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                                                    Budget Utilization
+                                                                </span>
+                                                                <span
+                                                                    className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                                                        editorOverBudget
+                                                                            ? 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+                                                                            : editorPercentTotal >= 85
+                                                                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                                                              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                                    }`}
+                                                                >
+                                                                    {editorPercentTotal.toFixed(1)}%
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="text-right text-xs">
+                                                                {editorOverBudget ? (
+                                                                    <span className="font-bold text-red-600 dark:text-red-400">
+                                                                        Deficit: -{formatCurrency(Math.abs(editorNetRemaining))}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                                                                        Net Remaining after PR: <strong>{formatCurrency(Math.max(0, editorNetRemaining))}</strong>
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
 
-                                                        <div className="mt-1 text-xs font-bold tabular-nums text-amber-600">
-                                                            {formatCurrency(
-                                                                editorSource.approved_pr_amount,
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="border-r border-border/70 p-3">
-                                                        <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                                                            Remaining
-                                                        </div>
-
-                                                        <div className="mt-1 text-xs font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
-                                                            {formatCurrency(
-                                                                editorSource.remaining_balance,
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="p-3">
-                                                        <div className="text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                                                            Draft Usage
-                                                        </div>
-
+                                                        {/* MULTI-SEGMENT PROGRESS BAR */}
                                                         <div
-                                                            className={`mt-1 text-xs font-bold tabular-nums ${
-                                                                editorOverBudget
-                                                                    ? 'text-red-600'
-                                                                    : 'text-violet-700 dark:text-violet-300'
-                                                            }`}
+                                                            className="relative h-2.5 w-full overflow-hidden rounded-full bg-secondary dark:bg-secondary/60"
+                                                            role="progressbar"
+                                                            aria-valuenow={Math.min(100, Math.round(editorPercentTotal))}
+                                                            aria-valuemin={0}
+                                                            aria-valuemax={100}
+                                                            aria-label="Parent PPMP budget utilization"
                                                         >
-                                                            {formatCurrency(
-                                                                editorProjectedUsage,
-                                                            )}
+                                                            {/* SEGMENT 1: APPROVED USAGE */}
+                                                            <div
+                                                                className="absolute bottom-0 left-0 top-0 bg-amber-500 transition-all duration-300"
+                                                                style={{
+                                                                    width: `${Math.min(100, editorPercentApproved)}%`,
+                                                                }}
+                                                                title={`Approved in other PRs: ${formatCurrency(editorSource.approved_pr_amount)} (${editorPercentApproved.toFixed(1)}%)`}
+                                                            />
+
+                                                            {/* SEGMENT 2: THIS PR DRAFT USAGE */}
+                                                            <div
+                                                                className={`absolute bottom-0 top-0 transition-all duration-300 ${
+                                                                    editorOverBudget
+                                                                        ? 'animate-pulse bg-red-600 dark:bg-red-500'
+                                                                        : 'bg-emerald-600 dark:bg-emerald-400'
+                                                                }`}
+                                                                style={{
+                                                                    left: `${Math.min(100, editorPercentApproved)}%`,
+                                                                    width: `${Math.min(
+                                                                        Math.max(0, 100 - editorPercentApproved),
+                                                                        editorPercentDraft,
+                                                                    )}%`,
+                                                                }}
+                                                                title={`This PR Draft: ${formatCurrency(editorProjectedUsage)} (${editorPercentDraft.toFixed(1)}%)`}
+                                                            />
+                                                        </div>
+
+                                                        {/* PROGRESS BAR LEGEND */}
+                                                        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="size-2 rounded-full bg-amber-500" />
+                                                                <span>Approved: {formatCurrency(editorSource.approved_pr_amount)} ({editorPercentApproved.toFixed(0)}%)</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span
+                                                                    className={`size-2 rounded-full ${
+                                                                        editorOverBudget ? 'bg-red-600' : 'bg-emerald-600'
+                                                                    }`}
+                                                                />
+                                                                <span>This PR Draft: {formatCurrency(editorProjectedUsage)} ({editorPercentDraft.toFixed(0)}%)</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className="size-2 rounded-full border border-border bg-secondary" />
+                                                                <span>
+                                                                    {editorOverBudget
+                                                                        ? `Over budget by ${formatCurrency(Math.abs(editorNetRemaining))}`
+                                                                        : `Available after PR: ${formatCurrency(Math.max(0, editorNetRemaining))}`}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                </div>
 
-                                                {editorOverBudget && (
-                                                    <div className="border-t border-red-300 px-4 py-3 text-xs font-semibold leading-5 text-red-700 dark:border-red-900 dark:text-red-300">
-                                                        This draft usage exceeds the remaining PPMP item balance. The draft may still be saved, but approval must not proceed until the amount is corrected.
-                                                    </div>
-                                                )}
+                                                    {editorOverBudget && (
+                                                        <div className="flex items-start gap-2 border-t border-red-300 px-4 py-3 text-xs font-semibold leading-5 text-red-700 dark:border-red-900 dark:text-red-300">
+                                                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-600" />
+                                                            <div>
+                                                                This draft usage exceeds the remaining parent PPMP item balance by <strong>{formatCurrency(Math.abs(editorNetRemaining))}</strong>.
+                                                                The draft may still be saved, but official budget lock and approval will be blocked until the amount is corrected.
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </section>
@@ -2372,7 +3058,7 @@ export default function CreatePurchaseRequest({
                                             </div>
 
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Stock number, unit, and description appearing on the PR.
+                                                Unit, quantity, and description are initially populated from the selected PPMP requirement but may be adjusted for the actual PR.
                                             </div>
                                         </div>
 
@@ -2410,26 +3096,117 @@ export default function CreatePurchaseRequest({
                                             </div>
 
                                             <div className="pms-field">
-                                                <Label>
-                                                    Unit
-                                                </Label>
+                                                <div className="flex items-center justify-between">
+                                                    <Label htmlFor="editor_unit">
+                                                        Unit
+                                                    </Label>
+                                                    {!customUnitMode ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setCustomUnitMode(
+                                                                    true,
+                                                                )
+                                                            }
+                                                            className="text-[11px] font-medium text-primary hover:underline"
+                                                        >
+                                                            Custom unit
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setCustomUnitMode(
+                                                                    false,
+                                                                );
+                                                                if (
+                                                                    !COMMON_UNITS.includes(
+                                                                        editorItem.unit,
+                                                                    )
+                                                                ) {
+                                                                    updateEditorItem(
+                                                                        'unit',
+                                                                        COMMON_UNITS[0],
+                                                                    );
+                                                                }
+                                                            }}
+                                                            className="text-[11px] font-medium text-primary hover:underline"
+                                                        >
+                                                            Choose from list
+                                                        </button>
+                                                    )}
+                                                </div>
 
-                                                <Input
-                                                    value={
-                                                        editorItem.unit
-                                                    }
-                                                    onChange={(
-                                                        event,
-                                                    ) =>
-                                                        updateEditorItem(
-                                                            'unit',
-                                                            event
-                                                                .target
-                                                                .value,
-                                                        )
-                                                    }
-                                                    placeholder="e.g. unit, box, lot"
-                                                />
+                                                {customUnitMode ? (
+                                                    <Input
+                                                        id="editor_unit"
+                                                        value={
+                                                            editorItem.unit
+                                                        }
+                                                        onChange={(
+                                                            event,
+                                                        ) =>
+                                                            updateEditorItem(
+                                                                'unit',
+                                                                event
+                                                                    .target
+                                                                    .value,
+                                                            )
+                                                        }
+                                                        placeholder="Enter custom unit (e.g. drum, cylinder)"
+                                                        autoFocus
+                                                    />
+                                                ) : (
+                                                    <select
+                                                        id="editor_unit"
+                                                        value={
+                                                            editorItem.unit
+                                                        }
+                                                        onChange={(
+                                                            event,
+                                                        ) => {
+                                                            if (
+                                                                event
+                                                                    .target
+                                                                    .value ===
+                                                                '__custom__'
+                                                            ) {
+                                                                setCustomUnitMode(
+                                                                    true,
+                                                                );
+                                                            } else {
+                                                                updateEditorItem(
+                                                                    'unit',
+                                                                    event
+                                                                        .target
+                                                                        .value,
+                                                                );
+                                                            }
+                                                        }}
+                                                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                                    >
+                                                        <option value="">
+                                                            Select unit...
+                                                        </option>
+                                                        {unitOptions.map(
+                                                            (unit) => (
+                                                                <option
+                                                                    key={
+                                                                        unit
+                                                                    }
+                                                                    value={
+                                                                        unit
+                                                                    }
+                                                                >
+                                                                    {unit}
+                                                                </option>
+                                                            ),
+                                                        )}
+                                                        <option value="__custom__">
+                                                            Other (Type custom unit)...
+                                                        </option>
+                                                    </select>
+                                                )}
 
                                                 {editingIndex !==
                                                     null && (
@@ -2491,11 +3268,19 @@ export default function CreatePurchaseRequest({
 
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             <div className="pms-field">
-                                                <Label>
-                                                    Quantity
-                                                </Label>
+                                                <div className="flex items-center justify-between">
+                                                    <Label htmlFor="editor_quantity">
+                                                        Quantity
+                                                    </Label>
+                                                    {editorPlannedQty !== null && (
+                                                        <span className="text-[11px] text-muted-foreground">
+                                                            Planned: <strong className="font-semibold text-foreground">{editorPlannedQty} {editorDetail?.unit || ''}</strong>
+                                                        </span>
+                                                    )}
+                                                </div>
 
                                                 <Input
+                                                    id="editor_quantity"
                                                     type="text"
                                                     inputMode="decimal"
                                                     value={
@@ -2513,9 +3298,67 @@ export default function CreatePurchaseRequest({
                                                             ),
                                                         )
                                                     }
-                                                    className="text-right font-semibold tabular-nums"
+                                                    className={`text-right font-semibold tabular-nums ${
+                                                        editorQtyExceeded
+                                                            ? 'border-amber-500 focus-visible:ring-amber-500'
+                                                            : ''
+                                                    }`}
                                                     placeholder="0"
                                                 />
+
+                                                {/* PPMP Physical Quantity Guard Notifications & Actions */}
+                                                {editorPlannedQty !== null && (
+                                                    <div className="mt-1.5 space-y-1">
+                                                        {editorQtyExceeded && (
+                                                            <div className="flex items-start justify-between gap-2 border border-amber-300 bg-amber-50/70 p-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                                                                <div className="flex items-start gap-1.5">
+                                                                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                                                                    <div>
+                                                                        <span>PR qty (<strong>{editorCurrentQty}</strong>) exceeds PPMP planned qty (<strong>{editorPlannedQty} {editorDetail?.unit || ''}</strong>).</span>
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        updateEditorItem(
+                                                                            'quantity',
+                                                                            String(editorPlannedQty),
+                                                                        )
+                                                                    }
+                                                                    className="shrink-0 text-[11px] font-semibold text-amber-900 underline hover:text-amber-700 dark:text-amber-200"
+                                                                >
+                                                                    Reset to {editorPlannedQty}
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {editorQtyUnder && (
+                                                            <div className="flex items-center justify-between gap-2 px-0.5 text-[11px] text-muted-foreground">
+                                                                <span>Under PPMP planned by {editorPlannedQty - editorCurrentQty} {editorDetail?.unit || ''}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        updateEditorItem(
+                                                                            'quantity',
+                                                                            String(editorPlannedQty),
+                                                                        )
+                                                                    }
+                                                                    className="font-medium text-primary hover:underline"
+                                                                >
+                                                                    Use full PPMP qty ({editorPlannedQty})
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        {editorPlannedQty > 0 &&
+                                                            editorCurrentQty === editorPlannedQty && (
+                                                                <div className="flex items-center gap-1.5 px-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                                                                    <CheckCircle2 className="size-3 text-emerald-600" />
+                                                                    <span>Matches PPMP planned allocation ({editorPlannedQty} {editorDetail?.unit || ''})</span>
+                                                                </div>
+                                                            )}
+                                                    </div>
+                                                )}
 
                                                 {editingIndex !==
                                                     null && (

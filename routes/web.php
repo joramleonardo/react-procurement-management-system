@@ -8,6 +8,7 @@ use App\Http\Controllers\PpmpController;
 use App\Http\Controllers\PpmpAttachmentController;
 use App\Http\Controllers\PpmpWorkflowController;
 use App\Http\Controllers\PurchaseRequestController;
+use App\Http\Controllers\PurchaseRequestWorkflowController;
 use App\Http\Controllers\DashboardController;
 
 Route::get('/', function () {
@@ -144,6 +145,13 @@ Route::middleware(['auth'])->group(function () {
         ->name('ppmps.revisions.store');
 
     Route::post(
+        'ppmps/{ppmp}/attachments',
+        [PpmpAttachmentController::class, 'storeGeneral']
+    )
+        ->whereNumber('ppmp')
+        ->name('ppmps.attachments.store-general');
+
+    Route::post(
         'ppmps/{ppmp}/items/{item}/attachments',
         [PpmpAttachmentController::class, 'store']
     )
@@ -182,6 +190,14 @@ Route::middleware(['auth'])->group(function () {
         ->whereNumber('ppmp')
         ->middleware('permission:ppmps.resubmit')
         ->name('ppmps.resubmit');
+
+    Route::patch(
+        'ppmps/{ppmp}/cancel',
+        [PpmpWorkflowController::class, 'cancel']
+    )
+        ->whereNumber('ppmp')
+        ->middleware('permission:ppmps.cancel')
+        ->name('ppmps.cancel');
 
     Route::patch(
         'ppmps/{ppmp}/return-for-revision',
@@ -232,6 +248,68 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('permission:prs.create')
         ->name('purchase-requests.store');
 
+    Route::get(
+        'purchase-requests/{purchaseRequest}',
+        [PurchaseRequestController::class, 'show']
+    )
+        ->whereNumber('purchaseRequest')
+        ->name('purchase-requests.show');
+
+    Route::get(
+        'purchase-requests/{purchaseRequest}/edit',
+        [PurchaseRequestController::class, 'edit']
+    )
+        ->whereNumber('purchaseRequest')
+        ->middleware('permission:prs.update-own')
+        ->name('purchase-requests.edit');
+
+    Route::put(
+        'purchase-requests/{purchaseRequest}',
+        [PurchaseRequestController::class, 'update']
+    )
+        ->whereNumber('purchaseRequest')
+        ->middleware('permission:prs.update-own')
+        ->name('purchase-requests.update');
+
+    Route::patch(
+        'purchase-requests/{purchaseRequest}/submit',
+        [PurchaseRequestWorkflowController::class, 'submit']
+    )
+        ->whereNumber('purchaseRequest')
+        ->middleware('permission:prs.submit')
+        ->name('purchase-requests.submit');
+
+    Route::patch(
+        'purchase-requests/{purchaseRequest}/resubmit',
+        [PurchaseRequestWorkflowController::class, 'resubmit']
+    )
+        ->whereNumber('purchaseRequest')
+        ->middleware('permission:prs.resubmit')
+        ->name('purchase-requests.resubmit');
+
+    Route::patch(
+        'purchase-requests/{purchaseRequest}/return-for-revision',
+        [PurchaseRequestWorkflowController::class, 'returnForRevision']
+    )
+        ->whereNumber('purchaseRequest')
+        ->middleware('permission:prs.return')
+        ->name('purchase-requests.return-for-revision');
+
+    Route::post(
+        'purchase-requests/{purchaseRequest}/approve',
+        [PurchaseRequestWorkflowController::class, 'approve']
+    )
+        ->whereNumber('purchaseRequest')
+        ->middleware('permission:prs.approve')
+        ->name('purchase-requests.approve');
+
+    Route::get(
+        'purchase-requests/{purchaseRequest}/attachments/{attachment}/download',
+        [PurchaseRequestWorkflowController::class, 'downloadAttachment']
+    )
+        ->whereNumber('purchaseRequest')
+        ->whereNumber('attachment')
+        ->name('purchase-requests.attachments.download');
 
 });
 

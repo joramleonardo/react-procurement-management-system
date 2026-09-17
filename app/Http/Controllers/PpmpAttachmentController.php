@@ -91,6 +91,58 @@ class PpmpAttachmentController extends Controller
         );
     }
 
+    /**
+     * Store a general PPMP-level supporting document (not tied to any specific item).
+     */
+    public function storeGeneral(
+        Request $request,
+        Ppmp $ppmp
+    ): RedirectResponse {
+        $this->ensureEditable(
+            $request,
+            $ppmp
+        );
+
+        $validated = $request->validate([
+            'attachment' => [
+                'required',
+                File::types([
+                    'pdf',
+                    'doc',
+                    'docx',
+                    'xls',
+                    'xlsx',
+                    'jpg',
+                    'jpeg',
+                    'png',
+                ])->max('20mb'),
+            ],
+        ]);
+
+        $file = $validated['attachment'];
+
+        $path = $file->store(
+            "ppmps/{$ppmp->id}/general",
+            'local'
+        );
+
+        $ppmp->attachments()->create([
+            'ppmp_item_id' => null,
+            'document_type' => 'supporting_document',
+            'original_name' => $file->getClientOriginalName(),
+            'stored_name' => basename($path),
+            'file_path' => $path,
+            'mime_type' => $file->getMimeType(),
+            'file_size' => $file->getSize(),
+            'uploaded_by' => $request->user()->id,
+        ]);
+
+        return back()->with(
+            'success',
+            'General supporting document uploaded successfully.'
+        );
+    }
+
     public function download(
         Request $request,
         Ppmp $ppmp,

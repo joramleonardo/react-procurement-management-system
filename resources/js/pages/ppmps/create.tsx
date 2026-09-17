@@ -59,10 +59,24 @@ interface CreateProps {
     indicativeNo: number;
 }
 
+type PpmpItemDetailForm = {
+    project_type: string;
+    quantity: string;
+    unit: string;
+    item_description: string;
+    size_specification: string;
+    estimated_amount: string;
+};
+
 type PpmpItemForm = {
     description_objective: string;
-    project_type: string;
-    quantity_size: string;
+
+    /*
+     * Linked and repeatable:
+     * Item No. 2 + Item No. 3
+     */
+    details: PpmpItemDetailForm[];
+
     recommended_mode_of_procurement: string;
     pre_procurement_conference: boolean;
     procurement_start_month: string;
@@ -70,6 +84,10 @@ type PpmpItemForm = {
     expected_delivery_month: string;
     source_of_funds: string;
     estimated_budget: string;
+
+    /* Item No. 11 - optional supporting documents. */
+    supporting_documents: File[];
+
     remarks: string;
 };
 
@@ -85,7 +103,13 @@ type PpmpFormData = {
     items: PpmpItemForm[];
 };
 
-type ItemField = keyof PpmpItemForm;
+type ItemField = Exclude<
+    keyof PpmpItemForm,
+    'details' | 'supporting_documents'
+>;
+
+type ItemDetailField =
+    keyof PpmpItemDetailForm;
 
 type CreateTab =
     | 'information'
@@ -107,11 +131,25 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
+function createEmptyDetail(): PpmpItemDetailForm {
+    return {
+        project_type: '',
+        quantity: '',
+        unit: '',
+        item_description: '',
+        size_specification: '',
+        estimated_amount: '',
+    };
+}
+
 function createEmptyItem(): PpmpItemForm {
     return {
         description_objective: '',
-        project_type: '',
-        quantity_size: '',
+
+        details: [
+            createEmptyDetail(),
+        ],
+
         recommended_mode_of_procurement: '',
         pre_procurement_conference: false,
         procurement_start_month: '',
@@ -119,8 +157,22 @@ function createEmptyItem(): PpmpItemForm {
         expected_delivery_month: '',
         source_of_funds: '',
         estimated_budget: '',
+        supporting_documents: [],
         remarks: '',
     };
+}
+
+function isDetailBlank(
+    detail: PpmpItemDetailForm,
+): boolean {
+    return (
+        !detail.project_type &&
+        !detail.quantity &&
+        !detail.unit &&
+        !detail.item_description &&
+        !detail.size_specification &&
+        !detail.estimated_amount
+    );
 }
 
 function isItemBlank(
@@ -128,16 +180,36 @@ function isItemBlank(
 ): boolean {
     return (
         !item.description_objective &&
-        !item.project_type &&
-        !item.quantity_size &&
+        item.details.every(
+            isDetailBlank,
+        ) &&
         !item.recommended_mode_of_procurement &&
         !item.procurement_start_month &&
         !item.procurement_end_month &&
         !item.expected_delivery_month &&
         !item.source_of_funds &&
         !item.estimated_budget &&
+        item.supporting_documents.length === 0 &&
         !item.remarks
     );
+}
+
+function cloneItemForm(
+    item: PpmpItemForm,
+): PpmpItemForm {
+    return {
+        ...item,
+
+        details: item.details.map(
+            (detail) => ({
+                ...detail,
+            }),
+        ),
+
+        supporting_documents: [
+            ...item.supporting_documents,
+        ],
+    };
 }
 
 function formatCurrency(
@@ -236,6 +308,121 @@ function normalizeBudgetInput(
     }
 
     return amount.toFixed(2);
+}
+
+function sanitizeQuantityInput(
+    value: string,
+): string {
+    const cleaned =
+        value.replace(
+            /[^\d.]/g,
+            '',
+        );
+
+    const parts =
+        cleaned.split('.');
+
+    const whole =
+        parts[0] ?? '';
+
+    const decimal =
+        parts
+            .slice(1)
+            .join('')
+            .slice(0, 3);
+
+    if (cleaned.includes('.')) {
+        return `${whole}.${decimal}`;
+    }
+
+    return whole;
+}
+
+function normalizeQuantityInput(
+    value: string,
+): string {
+    if (!value) {
+        return '';
+    }
+
+    const amount =
+        Number(value);
+
+    if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+    ) {
+        return '';
+    }
+
+    return String(
+        Number(
+            amount.toFixed(3),
+        ),
+    );
+}
+
+function projectTypeSummary(
+    item: PpmpItemForm,
+): string {
+    const types =
+        Array.from(
+            new Set(
+                item.details
+                    .map(
+                        (detail) =>
+                            detail.project_type.trim(),
+                    )
+                    .filter(Boolean),
+            ),
+        );
+
+    return types.length > 0
+        ? types.join(', ')
+        : '—';
+}
+
+function detailPreview(
+    detail: PpmpItemDetailForm,
+): string {
+    const main =
+        [
+            detail.quantity,
+            detail.unit.trim(),
+            detail.item_description.trim(),
+        ]
+            .filter(Boolean)
+            .join(' ');
+
+    const specification =
+        detail.size_specification.trim();
+
+    if (
+        main &&
+        specification
+    ) {
+        return `${main} — ${specification}`;
+    }
+
+    return (
+        main ||
+        specification ||
+        '—'
+    );
+}
+
+function formatFileSize(
+    bytes: number,
+): string {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+
+    if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatMonth(
@@ -346,6 +533,76 @@ export default function CreatePpmp({
     ] = useState<string | null>(
         null,
     );
+
+    const editorMeaningfulDetails =
+        useMemo(
+            () =>
+                editorItem.details.filter(
+                    (detail) => !isDetailBlank(detail),
+                ),
+            [editorItem.details],
+        );
+
+    const editorDetailsWithAmount =
+        useMemo(
+            () =>
+                editorMeaningfulDetails.filter(
+                    (detail) =>
+                        detail.estimated_amount.trim() !== '',
+                ),
+            [editorMeaningfulDetails],
+        );
+
+    const hasAnyDetailAmount =
+        editorDetailsWithAmount.length > 0;
+
+    const hasCompleteDetailAmounts =
+        editorMeaningfulDetails.length > 0 &&
+        editorDetailsWithAmount.length ===
+            editorMeaningfulDetails.length;
+
+    const hasPartialDetailAmounts =
+        hasAnyDetailAmount && !hasCompleteDetailAmounts;
+
+    const detailEstimatedAmountTotal =
+        useMemo(() => {
+            const totalCents =
+                editorDetailsWithAmount.reduce(
+                    (total, detail) => {
+                        const amount =
+                            Number(
+                                detail.estimated_amount.replace(/,/g, ''),
+                            ) || 0;
+
+                        return total + Math.round(amount * 100);
+                    },
+                    0,
+                );
+
+            return totalCents / 100;
+        }, [editorDetailsWithAmount]);
+
+    const calculatedItemTenBudget =
+        useMemo(() => {
+            if (hasCompleteDetailAmounts) {
+                return detailEstimatedAmountTotal;
+            }
+
+            if (!hasAnyDetailAmount) {
+                return (
+                    Number(
+                        editorItem.estimated_budget.replace(/,/g, ''),
+                    ) || 0
+                );
+            }
+
+            return 0;
+        }, [
+            hasCompleteDetailAmounts,
+            hasAnyDetailAmount,
+            detailEstimatedAmountTotal,
+            editorItem.estimated_budget,
+        ]);
 
     const totalBudget =
         useMemo(() => {
@@ -458,9 +715,11 @@ export default function CreatePpmp({
             index,
         );
 
-        setEditorItem({
-            ...item,
-        });
+        setEditorItem(
+            cloneItemForm(
+                item,
+            ),
+        );
 
         setItemEditorOpen(
             true,
@@ -484,6 +743,181 @@ export default function CreatePpmp({
         setEditorError(
             null,
         );
+    }
+
+function updateEditorDetail<
+    K extends ItemDetailField,
+>(
+    detailIndex: number,
+    field: K,
+    value: PpmpItemDetailForm[K],
+) {
+    setEditorItem(
+        (current) => {
+            const details =
+                current.details.map(
+                    (
+                        detail,
+                        index,
+                    ) =>
+                        index === detailIndex
+                            ? {
+                                  ...detail,
+
+                                  [field]:
+                                      value,
+                              }
+                            : detail,
+                );
+
+            return {
+                ...current,
+                details,
+            };
+        },
+    );
+
+    setEditorError(null);
+}
+
+function addEditorDetail() {
+    setEditorItem(
+        (current) => ({
+            ...current,
+
+            details: [
+                ...current.details,
+                createEmptyDetail(),
+            ],
+        }),
+    );
+
+    setEditorError(null);
+}
+
+function removeEditorDetail(
+    detailIndex: number,
+) {
+    setEditorItem(
+        (current) => {
+            /*
+             * Always leave at least one row
+             * visible inside the editor.
+             */
+            if (
+                current.details.length === 1
+            ) {
+                return {
+                    ...current,
+
+                    details: [
+                        createEmptyDetail(),
+                    ],
+                };
+            }
+
+            return {
+                ...current,
+
+                details:
+                    current.details.filter(
+                        (
+                            _,
+                            index,
+                        ) =>
+                            index !== detailIndex,
+                    ),
+            };
+        },
+    );
+
+    setEditorError(null);
+}
+
+
+    function addSupportingDocuments(
+        files: FileList | null,
+    ) {
+        if (!files) {
+            return;
+        }
+
+        const selected = Array.from(files);
+        const allowedExtensions = [
+            'pdf',
+            'doc',
+            'docx',
+            'xls',
+            'xlsx',
+            'jpg',
+            'jpeg',
+            'png',
+        ];
+        const maximumFileSize = 20 * 1024 * 1024;
+
+        for (const file of selected) {
+            const extension =
+                file.name.split('.').pop()?.toLowerCase() ?? '';
+
+            if (!allowedExtensions.includes(extension)) {
+                setEditorError(
+                    `"${file.name}" is not a supported file type. Use PDF, Word, Excel, JPG, or PNG.`,
+                );
+                return;
+            }
+
+            if (file.size > maximumFileSize) {
+                setEditorError(
+                    `"${file.name}" exceeds the 20 MB file size limit.`,
+                );
+                return;
+            }
+        }
+
+        setEditorItem((current) => {
+            const combined = [
+                ...current.supporting_documents,
+                ...selected,
+            ];
+
+            const unique = combined.filter(
+                (file, index, all) =>
+                    all.findIndex(
+                        (candidate) =>
+                            candidate.name === file.name &&
+                            candidate.size === file.size &&
+                            candidate.lastModified === file.lastModified,
+                    ) === index,
+            );
+
+            if (unique.length > 20) {
+                setEditorError(
+                    'A procurement item may contain a maximum of 20 supporting documents.',
+                );
+                return current;
+            }
+
+            return {
+                ...current,
+                supporting_documents: unique,
+            };
+        });
+
+        setEditorError(null);
+    }
+
+    function removeSupportingDocument(
+        fileIndex: number,
+    ) {
+        setEditorItem((current) => ({
+            ...current,
+            supporting_documents:
+                current.supporting_documents.filter(
+                    (_, index) => index !== fileIndex,
+                ),
+        }));
+
+        setEditorError(null);
     }
 
     function openNewItem() {
@@ -511,9 +945,11 @@ export default function CreatePpmp({
             index,
         );
 
-        setEditorItem({
-            ...data.items[index],
-        });
+        setEditorItem(
+            cloneItemForm(
+                data.items[index],
+            ),
+        );
 
         setEditorError(
             null,
@@ -538,89 +974,138 @@ export default function CreatePpmp({
         );
     }
 
-    function saveEditorItem() {
-        if (
-            !editorItem
-                .description_objective
-                .trim()
-        ) {
-            setEditorError(
-                'Please enter the general description and objective.',
-            );
-
-            return;
-        }
-
-        if (
-            !editorItem.project_type
-        ) {
-            setEditorError(
-                'Please select the project type.',
-            );
-
-            return;
-        }
-
-        if (
-            !editorItem.estimated_budget
-        ) {
-            setEditorError(
-                'Please enter the estimated budget.',
-            );
-
-            return;
-        }
-
-        const normalized = {
-            ...editorItem,
-
-            estimated_budget:
-                normalizeBudgetInput(
-                    editorItem
-                        .estimated_budget,
-                ),
-        };
-
-        if (
-            editingIndex !== null
-        ) {
-            const items = [
-                ...data.items,
-            ];
-
-            items[
-                editingIndex
-            ] = normalized;
-
-            setData(
-                'items',
-                items,
-            );
-        } else if (
-            data.items.length === 1 &&
-            isItemBlank(
-                data.items[0],
-            )
-        ) {
-            /*
-             * Replace the initial placeholder item.
-             */
-            setData(
-                'items',
-                [normalized],
-            );
-        } else {
-            setData(
-                'items',
-                [
-                    ...data.items,
-                    normalized,
-                ],
-            );
-        }
-
-        closeItemEditor();
+function saveEditorItem() {
+    if (!editorItem.description_objective.trim()) {
+        setEditorError(
+            'Please enter the general description and objective.',
+        );
+        return;
     }
+
+    const meaningfulDetails =
+        editorItem.details.filter(
+            (detail) => !isDetailBlank(detail),
+        );
+
+    if (meaningfulDetails.length === 0) {
+        setEditorError(
+            'Please add at least one Project Type with its corresponding Quantity and Size details.',
+        );
+        return;
+    }
+
+    for (
+        let detailIndex = 0;
+        detailIndex < meaningfulDetails.length;
+        detailIndex += 1
+    ) {
+        const detail = meaningfulDetails[detailIndex];
+
+        if (!detail.project_type) {
+            setEditorError(
+                `Please select the Project Type for entry ${detailIndex + 1}.`,
+            );
+            return;
+        }
+
+        const normalizedQuantity =
+            normalizeQuantityInput(detail.quantity);
+
+        if (!normalizedQuantity) {
+            setEditorError(
+                `Please enter a valid quantity greater than zero for entry ${detailIndex + 1}.`,
+            );
+            return;
+        }
+
+        if (!detail.unit.trim()) {
+            setEditorError(
+                `Please enter the unit for entry ${detailIndex + 1}.`,
+            );
+            return;
+        }
+
+        if (!detail.item_description.trim()) {
+            setEditorError(
+                `Please enter the item / requirement description for entry ${detailIndex + 1}.`,
+            );
+            return;
+        }
+    }
+
+    const amountEntries =
+        meaningfulDetails.filter(
+            (detail) => detail.estimated_amount.trim() !== '',
+        );
+
+    if (
+        amountEntries.length > 0 &&
+        amountEntries.length < meaningfulDetails.length
+    ) {
+        setEditorError(
+            'Individual estimated amounts must be entered for all Project / Requirement entries or left blank for all entries.',
+        );
+        return;
+    }
+
+    const normalizedDetails =
+        meaningfulDetails.map((detail) => ({
+            ...detail,
+            project_type: detail.project_type.trim(),
+            quantity: normalizeQuantityInput(detail.quantity),
+            unit: detail.unit.trim(),
+            item_description: detail.item_description.trim(),
+            size_specification: detail.size_specification.trim(),
+            estimated_amount: detail.estimated_amount
+                ? normalizeBudgetInput(detail.estimated_amount)
+                : '',
+        }));
+
+    let resolvedEstimatedBudget = '';
+
+    if (amountEntries.length === meaningfulDetails.length) {
+        const totalCents = normalizedDetails.reduce(
+            (total, detail) => {
+                const amount = Number(detail.estimated_amount) || 0;
+                return total + Math.round(amount * 100);
+            },
+            0,
+        );
+
+        resolvedEstimatedBudget = (totalCents / 100).toFixed(2);
+    } else {
+        resolvedEstimatedBudget = editorItem.estimated_budget
+            ? normalizeBudgetInput(editorItem.estimated_budget)
+            : '';
+    }
+
+    const normalized: PpmpItemForm = {
+        ...editorItem,
+        details: normalizedDetails,
+        supporting_documents: [
+            ...editorItem.supporting_documents,
+        ],
+        estimated_budget: resolvedEstimatedBudget,
+    };
+
+    if (editingIndex !== null) {
+        const items = [...data.items];
+        items[editingIndex] = normalized;
+        setData('items', items);
+    } else if (
+        data.items.length === 1 &&
+        isItemBlank(data.items[0])
+    ) {
+        setData('items', [normalized]);
+    } else {
+        setData('items', [
+            ...data.items,
+            normalized,
+        ]);
+    }
+
+    closeItemEditor();
+}
 
     function removeItem(
         index: number,
@@ -667,6 +1152,8 @@ export default function CreatePpmp({
 
             post('/ppmps', {
                 preserveScroll:
+                    true,
+                forceFormData:
                     true,
             });
         };
@@ -748,7 +1235,7 @@ export default function CreatePpmp({
 
                             <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
                                 <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                                    Indicative No.
+                                    PPMP No.
                                 </div>
 
                                 <div className="mt-1 text-sm font-bold text-primary">
@@ -1031,7 +1518,7 @@ export default function CreatePpmp({
 
                                                     <div>
                                                         <div className="text-xs font-bold uppercase tracking-[0.08em] text-primary">
-                                                            PPMP Number
+                                                            PPMP ID
                                                         </div>
 
                                                         <p className="mt-1 text-xs leading-5 text-muted-foreground">
@@ -1168,7 +1655,7 @@ export default function CreatePpmp({
                                     ) : (
                                         <>
                                             <div className="overflow-x-auto">
-                                                <table className="pms-table min-w-[1180px]">
+                                                <table className="pms-table min-w-[1320px]">
                                                     <thead>
                                                         <tr>
                                                             <th className="w-[60px]">
@@ -1179,11 +1666,11 @@ export default function CreatePpmp({
                                                                 Procurement Item
                                                             </th>
 
-                                                            <th className="w-[150px]">
+                                                            <th className="w-[180px]">
                                                                 Project Type
                                                             </th>
 
-                                                            <th className="w-[150px]">
+                                                            <th className="w-[300px]">
                                                                 Quantity / Size
                                                             </th>
 
@@ -1254,14 +1741,59 @@ export default function CreatePpmp({
                                                                     </td>
 
                                                                     <td>
-                                                                        {
-                                                                            item.project_type
-                                                                        }
+                                                                        <div className="text-xs font-semibold leading-5">
+                                                                            {projectTypeSummary(
+                                                                                item,
+                                                                            )}
+                                                                        </div>
                                                                     </td>
 
                                                                     <td>
-                                                                        {item.quantity_size ||
-                                                                            '—'}
+                                                                        <div className="space-y-1.5">
+                                                                            {item.details
+                                                                                .filter(
+                                                                                    (detail) =>
+                                                                                        !isDetailBlank(
+                                                                                            detail,
+                                                                                        ),
+                                                                                )
+                                                                                .slice(0, 3)
+                                                                                .map(
+                                                                                    (
+                                                                                        detail,
+                                                                                        detailIndex,
+                                                                                    ) => (
+                                                                                        <div
+                                                                                            key={
+                                                                                                detailIndex
+                                                                                            }
+                                                                                            className="text-xs leading-5"
+                                                                                        >
+                                                                                            {detailPreview(
+                                                                                                detail,
+                                                                                            )}
+                                                                                        </div>
+                                                                                    ),
+                                                                                )}
+
+                                                                            {item.details.filter(
+                                                                                (detail) =>
+                                                                                    !isDetailBlank(
+                                                                                        detail,
+                                                                                    ),
+                                                                            ).length > 3 && (
+                                                                                <div className="text-[10px] font-semibold text-muted-foreground">
+                                                                                    +
+                                                                                    {item.details.filter(
+                                                                                        (detail) =>
+                                                                                            !isDetailBlank(
+                                                                                                detail,
+                                                                                            ),
+                                                                                    ).length - 3}{' '}
+                                                                                    more
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </td>
 
                                                                     <td>
@@ -1797,7 +2329,7 @@ export default function CreatePpmp({
                                                 )}
                                             </div>
 
-                                            <div className="pms-field">
+                                            {/* <div className="pms-field">
                                                 <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
                                                     <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
                                                         2
@@ -1897,7 +2429,418 @@ Lot 2:
                                                     className="mt-2 w-full border border-input bg-background px-3 py-2 text-sm outline-none"
                                                     required
                                                 />
-                                            </div>
+                                            </div> */}
+
+<div className="pms-field">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                <span className="inline-flex h-7 w-7 items-center justify-center bg-blue-600 text-sm font-bold text-white">
+                    2
+                </span>
+
+                Type of the Project to be Procured
+            </Label>
+
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Add one or more Project Type entries.
+                Each Project Type is directly linked
+                to its corresponding Quantity and Size
+                information under Item No. 3.
+            </p>
+        </div>
+
+        <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={
+                addEditorDetail
+            }
+            className="shrink-0"
+        >
+            <Plus className="size-3.5" />
+            Add Another Project Type
+        </Button>
+    </div>
+
+    <div className="mt-4 space-y-4">
+        {editorItem.details.map(
+            (
+                detail,
+                detailIndex,
+            ) => (
+                <div
+                    key={
+                        detailIndex
+                    }
+                    className="border border-border bg-secondary/10"
+                >
+                    {/* LINKED ENTRY HEADER */}
+                    <div className="flex items-center justify-between gap-3 border-b border-border bg-secondary/25 px-4 py-3">
+                        <div>
+                            <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                                Linked Item 2 + Item 3
+                            </div>
+
+                            <div className="mt-0.5 text-sm font-bold">
+                                Project / Requirement{' '}
+                                {detailIndex + 1}
+                            </div>
+                        </div>
+
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                                removeEditorDetail(
+                                    detailIndex,
+                                )
+                            }
+                            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/20"
+                        >
+                            <Trash2 className="size-3.5" />
+
+                            {editorItem
+                                .details
+                                .length > 1
+                                ? 'Remove'
+                                : 'Clear'}
+                        </Button>
+                    </div>
+
+                    <div className="space-y-4 p-4">
+
+                        {/* ITEM NO. 2 */}
+                        <div className="pms-field">
+                            <Label
+                                htmlFor={`project_type_${detailIndex}`}
+                                className="flex items-center gap-2 text-sm font-semibold text-slate-800"
+                            >
+                                <span className="inline-flex h-6 w-6 items-center justify-center bg-blue-600 text-xs font-bold text-white">
+                                    2
+                                </span>
+
+                                Project Type
+                            </Label>
+
+                            <select
+                                id={`project_type_${detailIndex}`}
+                                value={
+                                    detail.project_type
+                                }
+                                onChange={(
+                                    event,
+                                ) =>
+                                    updateEditorDetail(
+                                        detailIndex,
+                                        'project_type',
+                                        event
+                                            .target
+                                            .value,
+                                    )
+                                }
+                                className="h-9 w-full border border-input bg-background px-3 text-sm"
+                            >
+                                <option value="">
+                                    Select project type
+                                </option>
+
+                                <option value="Goods">
+                                    Goods
+                                </option>
+
+                                <option value="Infrastructure Projects">
+                                    Infrastructure Projects
+                                </option>
+
+                                <option value="Consulting Services">
+                                    Consulting Services
+                                </option>
+
+                                <option value="Other">
+                                    Other
+                                </option>
+                            </select>
+
+                            {editingIndex !==
+                                null && (
+                                <InputError
+                                    message={errorFor(
+                                        `items.${editingIndex}.details.${detailIndex}.project_type`,
+                                    )}
+                                />
+                            )}
+                        </div>
+
+                        {/* ITEM NO. 3 */}
+                        {detail.project_type && (
+                            <div className="border-t border-border pt-4">
+                                <div className="mb-4">
+                                    <Label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                                        <span className="inline-flex h-6 w-6 items-center justify-center bg-emerald-600 text-xs font-bold text-white">
+                                            3
+                                        </span>
+
+                                        Quantity and Size of the Project to be Procured
+                                    </Label>
+
+                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        Quantity, Unit, Item /
+                                        Requirement, and Size /
+                                        Specification are stored
+                                        separately so the exact
+                                        record can later be used
+                                        in a Purchase Request.
+                                    </p>
+                                </div>
+
+                                {/* QUANTITY + UNIT */}
+                                <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
+                                    <div className="pms-field">
+                                        <Label
+                                            htmlFor={`quantity_${detailIndex}`}
+                                        >
+                                            Quantity
+                                        </Label>
+
+                                        <Input
+                                            id={`quantity_${detailIndex}`}
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={
+                                                detail.quantity
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                updateEditorDetail(
+                                                    detailIndex,
+                                                    'quantity',
+                                                    sanitizeQuantityInput(
+                                                        event
+                                                            .target
+                                                            .value,
+                                                    ),
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                updateEditorDetail(
+                                                    detailIndex,
+                                                    'quantity',
+                                                    normalizeQuantityInput(
+                                                        detail.quantity,
+                                                    ),
+                                                )
+                                            }
+                                            placeholder="100"
+                                        />
+
+                                        {editingIndex !==
+                                            null && (
+                                            <InputError
+                                                message={errorFor(
+                                                    `items.${editingIndex}.details.${detailIndex}.quantity`,
+                                                )}
+                                            />
+                                        )}
+                                    </div>
+
+                                    <div className="pms-field">
+                                        <Label
+                                            htmlFor={`unit_${detailIndex}`}
+                                        >
+                                            Unit
+                                        </Label>
+
+                                        <Input
+                                            id={`unit_${detailIndex}`}
+                                            value={
+                                                detail.unit
+                                            }
+                                            onChange={(
+                                                event,
+                                            ) =>
+                                                updateEditorDetail(
+                                                    detailIndex,
+                                                    'unit',
+                                                    event
+                                                        .target
+                                                        .value,
+                                                )
+                                            }
+                                            placeholder="packs, btls., pcs., units, lots..."
+                                        />
+
+                                        {editingIndex !==
+                                            null && (
+                                            <InputError
+                                                message={errorFor(
+                                                    `items.${editingIndex}.details.${detailIndex}.unit`,
+                                                )}
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* ITEM DESCRIPTION */}
+                                <div className="mt-4 pms-field">
+                                    <Label
+                                        htmlFor={`detail_item_description_${detailIndex}`}
+                                    >
+                                        Item / Requirement
+                                    </Label>
+
+                                    <Input
+                                        id={`detail_item_description_${detailIndex}`}
+                                        value={
+                                            detail.item_description
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            updateEditorDetail(
+                                                detailIndex,
+                                                'item_description',
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                        placeholder="e.g. Detergent powder"
+                                    />
+
+                                    {editingIndex !==
+                                        null && (
+                                        <InputError
+                                            message={errorFor(
+                                                `items.${editingIndex}.details.${detailIndex}.item_description`,
+                                            )}
+                                        />
+                                    )}
+                                </div>
+
+                                {/* SIZE / SPECIFICATION */}
+                                <div className="mt-4 pms-field">
+                                    <Label
+                                        htmlFor={`size_specification_${detailIndex}`}
+                                    >
+                                        Size / Specification
+                                    </Label>
+
+                                    <textarea
+                                        id={`size_specification_${detailIndex}`}
+                                        value={
+                                            detail.size_specification
+                                        }
+                                        onChange={(
+                                            event,
+                                        ) =>
+                                            updateEditorDetail(
+                                                detailIndex,
+                                                'size_specification',
+                                                event
+                                                    .target
+                                                    .value,
+                                            )
+                                        }
+                                        rows={3}
+                                        placeholder="Optional size, dimensions, capacity, technical specification, or other requirement..."
+                                        className="w-full border border-input bg-background px-3 py-2 text-sm outline-none"
+                                    />
+
+                                    {editingIndex !==
+                                        null && (
+                                        <InputError
+                                            message={errorFor(
+                                                `items.${editingIndex}.details.${detailIndex}.size_specification`,
+                                            )}
+                                        />
+                                    )}
+                                </div>
+
+                                {/* INDIVIDUAL ESTIMATED AMOUNT */}
+                                <div className="mt-4 pms-field">
+                                    <Label
+                                        htmlFor={`estimated_amount_${detailIndex}`}
+                                    >
+                                        Estimated Amount
+                                        <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                            (Optional)
+                                        </span>
+                                    </Label>
+
+                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        If an estimated amount is provided for one Project / Requirement entry, an amount must also be provided for all other entries.
+                                    </p>
+
+                                    <div className="relative mt-2">
+                                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">
+                                            ₱
+                                        </span>
+
+                                        <Input
+                                            id={`estimated_amount_${detailIndex}`}
+                                            type="text"
+                                            inputMode="decimal"
+                                            className="pl-8 text-right font-semibold tabular-nums"
+                                            value={formatBudgetInput(
+                                                detail.estimated_amount,
+                                            )}
+                                            onChange={(event) =>
+                                                updateEditorDetail(
+                                                    detailIndex,
+                                                    'estimated_amount',
+                                                    sanitizeBudgetInput(
+                                                        event.target.value,
+                                                    ),
+                                                )
+                                            }
+                                            onBlur={() =>
+                                                updateEditorDetail(
+                                                    detailIndex,
+                                                    'estimated_amount',
+                                                    detail.estimated_amount
+                                                        ? normalizeBudgetInput(
+                                                              detail.estimated_amount,
+                                                          )
+                                                        : '',
+                                                )
+                                            }
+                                            placeholder="0.00"
+                                        />
+                                    </div>
+
+                                    {editingIndex !== null && (
+                                        <InputError
+                                            message={errorFor(
+                                                `items.${editingIndex}.details.${detailIndex}.estimated_amount`,
+                                            )}
+                                        />
+                                    )}
+                                </div>
+
+                                {/* LIVE PREVIEW */}
+                                <div className="mt-4 border-l-[3px] border-emerald-500 bg-emerald-50/40 px-3 py-2.5 dark:bg-emerald-950/10">
+                                    <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-emerald-700 dark:text-emerald-300">
+                                        Quantity / Size Preview
+                                    </div>
+
+                                    <div className="mt-1 text-sm font-semibold">
+                                        {detailPreview(
+                                            detail,
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ),
+        )}
+    </div>
+</div>
 
                                             <div className="pms-field">
                                                 <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
@@ -2017,17 +2960,10 @@ Lot 2:
 
                                             <Input
                                                 type="month"
-                                                value={
-                                                    editorItem.procurement_end_month
-                                                }
-                                                onChange={(
-                                                    event,
-                                                ) =>
+                                                value={editorItem.procurement_end_month}
+                                                onChange={(event,) =>
                                                     updateEditorItem(
-                                                        'procurement_end_month',
-                                                        event
-                                                            .target
-                                                            .value,
+                                                        'procurement_end_month',event.target.value,
                                                     )
                                                 }
                                                 className="h-9 w-full border border-input bg-background px-3 text-sm"
@@ -2067,11 +3003,11 @@ Lot 2:
                                     <section className="border-t border-border pt-6">
                                         <div className="mb-4 border-l-[3px] border-violet-500 pl-3">
                                             <div className="text-sm font-bold">
-                                                Funding Details
+                                                Funding and Budget
                                             </div>
 
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Funding source and estimated procurement cost.
+                                                Funding source and the system-resolved Item No. 10 budget.
                                             </div>
                                         </div>
 
@@ -2085,25 +3021,84 @@ Lot 2:
                                             </Label>
 
                                             <Input
-                                                value={
-                                                    editorItem.source_of_funds
-                                                }
-                                                onChange={(
-                                                    event,
-                                                ) =>
+                                                value={editorItem.source_of_funds}
+                                                onChange={(event) =>
                                                     updateEditorItem(
                                                         'source_of_funds',
-                                                        event
-                                                            .target
-                                                            .value,
+                                                        event.target.value,
                                                     )
                                                 }
                                                 placeholder="Source of funds"
                                             />
                                         </div>
 
-                                        <div className="pms-field">
-                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
+                                        {!hasAnyDetailAmount && (
+                                            <div className="mt-5 pms-field">
+                                                <Label>
+                                                    Estimated Budget
+                                                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                                        (Optional Fallback)
+                                                    </span>
+                                                </Label>
+
+                                                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                    Use this only when individual estimated amounts are not available for the Project / Requirement entries above.
+                                                </p>
+
+                                                <div className="relative mt-2">
+                                                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">
+                                                        ₱
+                                                    </span>
+
+                                                    <Input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        className="pl-8 text-right font-semibold tabular-nums"
+                                                        value={formatBudgetInput(
+                                                            editorItem.estimated_budget,
+                                                        )}
+                                                        onChange={(event) =>
+                                                            updateEditorItem(
+                                                                'estimated_budget',
+                                                                sanitizeBudgetInput(
+                                                                    event.target.value,
+                                                                ),
+                                                            )
+                                                        }
+                                                        onBlur={() =>
+                                                            updateEditorItem(
+                                                                'estimated_budget',
+                                                                editorItem.estimated_budget
+                                                                    ? normalizeBudgetInput(
+                                                                          editorItem.estimated_budget,
+                                                                      )
+                                                                    : '',
+                                                            )
+                                                        }
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+
+                                                <p className="mt-1 text-[11px] text-muted-foreground">
+                                                    You may leave this blank while saving the PPMP as Draft.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {hasPartialDetailAmounts && (
+                                            <div className="mt-5 border-l-[3px] border-amber-500 bg-amber-50 px-4 py-3 text-sm dark:bg-amber-950/20">
+                                                <div className="font-bold text-amber-800 dark:text-amber-300">
+                                                    Individual costing is incomplete
+                                                </div>
+
+                                                <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400">
+                                                    Since at least one Project / Requirement entry has an estimated amount, all remaining entries must also have an estimated amount.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="mt-5 pms-field">
+                                            <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
                                                 <span className="inline-flex h-7 w-7 items-center justify-center bg-violet-600 text-sm font-bold text-white">
                                                     10
                                                 </span>
@@ -2111,82 +3106,180 @@ Lot 2:
                                                 Estimated Budget / Authorized Budgetary Allocation (PhP)
                                             </Label>
 
-                                            <div className="relative">
-                                                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-muted-foreground">
-                                                    ₱
-                                                </span>
+                                            <div className="mt-2 border border-violet-200 bg-violet-50/40 px-4 py-4 dark:border-violet-900 dark:bg-violet-950/15">
+                                                <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">
+                                                    System Calculated · Read-Only
+                                                </div>
 
-                                                <Input
-                                                    type="text"
-                                                    inputMode="decimal"
-                                                    className="pl-8 text-right text-base font-bold tabular-nums"
-                                                    value={formatBudgetInput(
-                                                        editorItem.estimated_budget,
-                                                    )}
-                                                    onChange={(
-                                                        event,
-                                                    ) =>
-                                                        updateEditorItem(
-                                                            'estimated_budget',
-                                                            sanitizeBudgetInput(
-                                                                event
-                                                                    .target
-                                                                    .value,
-                                                            ),
-                                                        )
-                                                    }
-                                                    onBlur={() =>
-                                                        updateEditorItem(
-                                                            'estimated_budget',
-                                                            normalizeBudgetInput(
-                                                                editorItem.estimated_budget,
-                                                            ),
-                                                        )
-                                                    }
-                                                    placeholder="0.00"
-                                                />
+                                                {hasPartialDetailAmounts ? (
+                                                    <div className="mt-2">
+                                                        <div className="text-lg font-bold text-amber-700 dark:text-amber-300">
+                                                            Incomplete Individual Costing
+                                                        </div>
+
+                                                        <p className="mt-1 text-xs text-muted-foreground">
+                                                            Complete all individual estimated amounts before Item No. 10 can be finalized.
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="mt-2 text-2xl font-bold tabular-nums text-violet-700 dark:text-violet-300">
+                                                            {formatCurrency(
+                                                                calculatedItemTenBudget,
+                                                            )}
+                                                        </div>
+
+                                                        <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                            {hasCompleteDetailAmounts
+                                                                ? `Calculated automatically from ${editorMeaningfulDetails.length} Project / Requirement ${
+                                                                      editorMeaningfulDetails.length === 1
+                                                                          ? 'entry'
+                                                                          : 'entries'
+                                                                  }.`
+                                                                : editorItem.estimated_budget
+                                                                  ? 'Based on the optional fallback estimated budget.'
+                                                                  : 'No estimated budget has been provided yet.'}
+                                                        </div>
+                                                    </>
+                                                )}
+
+                                                {editingIndex !== null && (
+                                                    <InputError
+                                                        message={errorFor(
+                                                            `items.${editingIndex}.estimated_budget`,
+                                                        )}
+                                                    />
+                                                )}
                                             </div>
-
-                                            {editingIndex !==
-                                                null && (
-                                                <InputError
-                                                    message={errorFor(
-                                                        `items.${editingIndex}.estimated_budget`,
-                                                    )}
-                                                />
-                                            )}
                                         </div>
                                     </section>
 
-                                    {/* ATTACHMENTS / REMARKS */}
+                                    {/* ITEM NO. 11 + ITEM NO. 12 */}
                                     <section className="border-t border-border pt-6">
                                         <div className="mb-4 border-l-[3px] border-sky-500 pl-3">
                                             <div className="text-sm font-bold">
-                                                Attachments and Remarks
+                                                Supporting Documents and Remarks
                                             </div>
 
                                             <div className="mt-1 text-xs text-muted-foreground">
-                                                Supporting documents and additional procurement notes.
+                                                Optional supporting files and additional procurement notes.
                                             </div>
                                         </div>
 
                                         <div className="pms-field">
-                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
+                                            <Label
+                                                htmlFor="supporting_documents"
+                                                className="flex items-center gap-2 text-base font-semibold text-slate-800"
+                                            >
                                                 <span className="inline-flex h-7 w-7 items-center justify-center bg-sky-600 text-sm font-bold text-white">
                                                     11
                                                 </span>
 
                                                 Supporting Documents
+
+                                                <span className="text-xs font-normal text-muted-foreground">
+                                                    (Optional)
+                                                </span>
                                             </Label>
 
                                             <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                                Supporting documents can be uploaded after this PPMP draft has been saved.
+                                                Attach supporting documents relevant to this procurement item, if available.
                                             </p>
+
+                                            <div className="mt-3 border border-dashed border-border bg-secondary/10 p-4">
+                                                <input
+                                                    id="supporting_documents"
+                                                    type="file"
+                                                    multiple
+                                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                                                    onChange={(event) => {
+                                                        addSupportingDocuments(
+                                                            event.target.files,
+                                                        );
+                                                        event.target.value = '';
+                                                    }}
+                                                    className="block w-full text-xs file:mr-3 file:border file:border-border file:bg-background file:px-3 file:py-2 file:text-xs file:font-semibold"
+                                                />
+
+                                                <div className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                                                    PDF, Word, Excel, JPG or PNG. Maximum 20 MB per file and maximum 20 documents per procurement item.
+                                                </div>
+                                            </div>
+
+                                            {editorItem.supporting_documents.length > 0 && (
+                                                <div className="mt-4 border border-border">
+                                                    <div className="border-b border-border bg-secondary/30 px-3 py-2">
+                                                        <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                                                            Selected Documents · {editorItem.supporting_documents.length}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="divide-y divide-border">
+                                                        {editorItem.supporting_documents.map(
+                                                            (file, fileIndex) => (
+                                                                <div
+                                                                    key={`${file.name}-${file.size}-${file.lastModified}`}
+                                                                    className="flex items-center justify-between gap-4 px-3 py-3"
+                                                                >
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <FileText className="size-4 shrink-0 text-sky-600" />
+                                                                            <span className="truncate text-sm font-semibold">
+                                                                                {file.name}
+                                                                            </span>
+                                                                        </div>
+
+                                                                        <div className="mt-1 pl-6 text-[10px] text-muted-foreground">
+                                                                            {formatFileSize(file.size)}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <Button
+                                                                        type="button"
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        onClick={() =>
+                                                                            removeSupportingDocument(
+                                                                                fileIndex,
+                                                                            )
+                                                                        }
+                                                                        className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/20"
+                                                                    >
+                                                                        <X className="size-3.5" />
+                                                                        Remove
+                                                                    </Button>
+                                                                </div>
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {editingIndex !== null && (
+                                                <>
+                                                    <InputError
+                                                        message={errorFor(
+                                                            `items.${editingIndex}.supporting_documents`,
+                                                        )}
+                                                    />
+
+                                                    {editorItem.supporting_documents.map(
+                                                        (_, fileIndex) => (
+                                                            <InputError
+                                                                key={fileIndex}
+                                                                message={errorFor(
+                                                                    `items.${editingIndex}.supporting_documents.${fileIndex}`,
+                                                                )}
+                                                            />
+                                                        ),
+                                                    )}
+                                                </>
+                                            )}
                                         </div>
 
-                                        <div className="pms-field">
-                                            <Label className="mt-3 flex items-center gap-2 text-base font-semibold text-slate-800">
-                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-sky-600 text-sm font-bold text-white">
+                                        <div className="mt-5 pms-field">
+                                            <Label className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                                                <span className="inline-flex h-7 w-7 items-center justify-center bg-slate-700 text-sm font-bold text-white">
                                                     12
                                                 </span>
 
@@ -2194,17 +3287,11 @@ Lot 2:
                                             </Label>
 
                                             <textarea
-                                                value={
-                                                    editorItem.remarks
-                                                }
-                                                onChange={(
-                                                    event,
-                                                ) =>
+                                                value={editorItem.remarks}
+                                                onChange={(event) =>
                                                     updateEditorItem(
                                                         'remarks',
-                                                        event
-                                                            .target
-                                                            .value,
+                                                        event.target.value,
                                                     )
                                                 }
                                                 rows={4}

@@ -24,6 +24,7 @@ import {
     Info,
     Pencil,
     Plus,
+    Paperclip,
     Upload,
     UsersRound,
     X,
@@ -51,12 +52,43 @@ interface Attachment {
     file_size: number | null;
 }
 
+interface PpmpAttachmentItem {
+    id: number;
+    document_type: string;
+    original_name: string;
+    file_size: number | null;
+    item_id: number | null;
+    item_title: string | null;
+    uploaded_by: string;
+    created_at: string | null;
+}
+
+interface PpmpItemDetail {
+    id: number;
+
+    project_type: string | null;
+    quantity: string | null;
+    unit: string | null;
+    item_description: string | null;
+    size_specification: string | null;
+
+    estimated_amount: string | null;
+}
+
 interface PpmpItem {
     id: number;
 
     description_objective: string;
-    project_type: string;
-    quantity_size: string;
+
+    /*
+     * Legacy compatibility fields are kept for historical
+     * PPMP records. Structured details[] are authoritative
+     * for Item Nos. 2 + 3.
+     */
+    project_type: string | null;
+    quantity_size: string | null;
+
+    details: PpmpItemDetail[];
 
     recommended_mode_of_procurement: string;
 
@@ -68,6 +100,9 @@ interface PpmpItem {
 
     source_of_funds: string;
 
+    /*
+     * Resolved Item No. 10 amount.
+     */
     estimated_budget: string;
 
     remarks: string | null;
@@ -159,6 +194,7 @@ interface Ppmp {
     approver: Approver | null;
 
     approved_copy: Attachment | null;
+    attachments: PpmpAttachmentItem[];
 }
 
 interface ShowProps {
@@ -172,6 +208,8 @@ interface ShowProps {
         approve: boolean;
         create_pr: boolean;
         create_revision: boolean;
+        cancel?: boolean;
+        upload_attachment?: boolean;
     };
 
     flash: {
@@ -182,7 +220,9 @@ interface ShowProps {
 type ShowTab =
     | 'information'
     | 'items'
-    | 'signatories';
+    | 'signatories'
+    | 'attachments'
+    | 'history';
 
 interface ItemAttachmentsProps {
     ppmpId: number;
@@ -264,6 +304,9 @@ function formatAction(
 
         approve:
             'Approved',
+
+        cancel:
+            'Cancelled / Withdrawn',
     };
 
     return (
@@ -331,6 +374,9 @@ function workflowDescription(
         case 'approved':
             return 'This PPMP has been approved and may now be used as the basis for Purchase Requests.';
 
+        case 'cancelled':
+            return 'This PPMP has been cancelled and is no longer active in the procurement workflow.';
+
         case 'draft':
         default:
             return 'This PPMP is currently a draft and may still be edited before submission.';
@@ -352,6 +398,102 @@ function itemSchedule(
     )} – ${formatMonth(
         item.procurement_end_month,
     )}`;
+}
+
+function detailHasContent(
+    detail: PpmpItemDetail,
+): boolean {
+    return Boolean(
+        detail.project_type?.trim() ||
+            detail.quantity?.trim() ||
+            detail.unit?.trim() ||
+            detail.item_description?.trim() ||
+            detail.size_specification?.trim() ||
+            detail.estimated_amount?.trim(),
+    );
+}
+
+function itemDetails(
+    item: PpmpItem,
+): PpmpItemDetail[] {
+    return (
+        item.details ?? []
+    ).filter(
+        detailHasContent,
+    );
+}
+
+function projectTypeSummary(
+    item: PpmpItem,
+): string {
+    const types =
+        Array.from(
+            new Set(
+                itemDetails(item)
+                    .map(
+                        (detail) =>
+                            detail.project_type?.trim() ??
+                            '',
+                    )
+                    .filter(Boolean),
+            ),
+        );
+
+    if (types.length > 0) {
+        return types.join(', ');
+    }
+
+    return (
+        item.project_type?.trim() ||
+        '—'
+    );
+}
+
+function detailPreview(
+    detail: PpmpItemDetail,
+): string {
+    const main =
+        [
+            detail.quantity?.trim(),
+            detail.unit?.trim(),
+            detail.item_description?.trim(),
+        ]
+            .filter(Boolean)
+            .join(' ');
+
+    const specification =
+        detail.size_specification?.trim() ??
+        '';
+
+    if (
+        main &&
+        specification
+    ) {
+        return `${main} — ${specification}`;
+    }
+
+    return (
+        main ||
+        specification ||
+        '—'
+    );
+}
+
+function itemHasIndividualAmounts(
+    item: PpmpItem,
+): boolean {
+    const details =
+        itemDetails(item);
+
+    return (
+        details.length > 0 &&
+        details.every(
+            (detail) =>
+                Boolean(
+                    detail.estimated_amount?.trim(),
+                ),
+        )
+    );
 }
 
 function ItemAttachments({
@@ -728,6 +870,12 @@ export default function ShowPpmp({
             null,
         );
 
+    const [workflowErrors, setWorkflowErrors] = useState<string[]>([]);
+    const [generalFile, setGeneralFile] = useState<File | null>(null);
+    const [generalUploading, setGeneralUploading] = useState(false);
+    const [generalUploadError, setGeneralUploadError] = useState<string | null>(null);
+    const [generalInputKey, setGeneralInputKey] = useState(0);
+
     const originalPpmp =
         ppmp.versions.find(
             (version) =>
@@ -741,7 +889,8 @@ export default function ShowPpmp({
         can.submit ||
         can.resubmit ||
         can.return_for_revision ||
-        can.approve;
+        can.approve ||
+        Boolean(can.cancel);
 
     function createIndicativeRevision() {
         const nextIndicativeNo =
@@ -842,16 +991,12 @@ export default function ShowPpmp({
                     (
                         errors,
                     ) => {
-                        const firstError =
-                            Object.values(
-                                errors,
-                            )[0];
-
+                        const errList = Object.values(errors).filter(
+                            (e): e is string => typeof e === 'string'
+                        );
+                        setWorkflowErrors(errList);
                         setWorkflowError(
-                            typeof firstError ===
-                                'string'
-                                ? firstError
-                                : 'The PPMP could not be submitted.',
+                            errList[0] ?? 'The PPMP could not be submitted.',
                         );
                     },
             },
@@ -884,6 +1029,7 @@ export default function ShowPpmp({
                         setWorkflowError(
                             null,
                         );
+                        setWorkflowErrors([]);
                     },
 
                 onFinish:
@@ -897,20 +1043,89 @@ export default function ShowPpmp({
                     (
                         errors,
                     ) => {
-                        const firstError =
-                            Object.values(
-                                errors,
-                            )[0];
-
+                        const errList = Object.values(errors).filter(
+                            (e): e is string => typeof e === 'string'
+                        );
+                        setWorkflowErrors(errList);
                         setWorkflowError(
-                            typeof firstError ===
-                                'string'
-                                ? firstError
-                                : 'The PPMP could not be resubmitted.',
+                            errList[0] ?? 'The PPMP could not be resubmitted.',
                         );
                     },
             },
         );
+    }
+
+    function cancelPpmp() {
+        const remarks = window.prompt(
+            'Are you sure you want to cancel / withdraw this PPMP? This cannot be undone.\n\nOptional: Enter reason for cancellation:'
+        );
+
+        if (remarks === null) {
+            return;
+        }
+
+        router.patch(
+            `/ppmps/${ppmp.id}/cancel`,
+            { remarks },
+            {
+                preserveScroll: true,
+                onStart: () => {
+                    setWorkflowProcessing(true);
+                    setWorkflowError(null);
+                    setWorkflowErrors([]);
+                },
+                onFinish: () => {
+                    setWorkflowProcessing(false);
+                },
+                onError: (errors) => {
+                    const firstError = Object.values(errors)[0];
+                    setWorkflowError(
+                        typeof firstError === 'string'
+                            ? firstError
+                            : 'The PPMP could not be cancelled.'
+                    );
+                },
+            }
+        );
+    }
+
+    function uploadGeneralAttachment(e: FormEvent) {
+        e.preventDefault();
+        if (!generalFile) return;
+
+        const formData = new FormData();
+        formData.append('attachment', generalFile);
+
+        router.post(`/ppmps/${ppmp.id}/attachments`, formData, {
+            preserveScroll: true,
+            onStart: () => {
+                setGeneralUploading(true);
+                setGeneralUploadError(null);
+            },
+            onFinish: () => {
+                setGeneralUploading(false);
+            },
+            onSuccess: () => {
+                setGeneralFile(null);
+                setGeneralInputKey((k) => k + 1);
+            },
+            onError: (errors) => {
+                const err = Object.values(errors)[0];
+                setGeneralUploadError(
+                    typeof err === 'string' ? err : 'Upload failed.'
+                );
+            },
+        });
+    }
+
+    function deleteAttachment(attachmentId: number, name: string) {
+        if (!window.confirm(`Delete supporting document "${name}"?`)) {
+            return;
+        }
+
+        router.delete(`/ppmps/${ppmp.id}/attachments/${attachmentId}`, {
+            preserveScroll: true,
+        });
     }
 
     function returnForRevision(
@@ -1167,29 +1382,24 @@ export default function ShowPpmp({
                 <div className="mx-auto w-full max-w-[1680px] p-4 md:p-6">
                     <section className="border border-border bg-card">
                         {/* SUMMARY STRIP */}
-                        <div className="grid border-b border-border bg-secondary/25 sm:grid-cols-2 xl:grid-cols-7">
+                        <div className="grid border-b border-border bg-secondary/25 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                             <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="pms-readonly-label">
-                                    PPMP No.
+                                    PPMP ID
                                 </div>
 
                                 <div className="mt-1 font-bold text-blue-700 dark:text-blue-300">
-                                    {
-                                        ppmp.ppmp_no
-                                    }
+                                    {ppmp.ppmp_no}
                                 </div>
                             </div>
 
-                            <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
+                            <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="pms-readonly-label">
                                     Status
                                 </div>
-
                                 <div className="mt-1">
                                     <StatusBadge
-                                        status={
-                                            ppmp.status
-                                        }
+                                        status={ppmp.status}
                                     />
                                 </div>
                             </div>
@@ -1198,48 +1408,26 @@ export default function ShowPpmp({
                                 <div className="pms-readonly-label">
                                     Fiscal Year
                                 </div>
-
                                 <div className="mt-1 text-sm font-bold">
-                                    {
-                                        ppmp.fiscal_year
-                                    }
-                                </div>
-                            </div>
-
-                            <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
-                                <div className="pms-readonly-label">
-                                    PPMP Type
-                                </div>
-
-                                <div className="mt-1 text-sm font-bold capitalize">
-                                    {
-                                        ppmp.plan_type
-                                    }
+                                    {ppmp.fiscal_year}
                                 </div>
                             </div>
 
                             <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="pms-readonly-label">
-                                    Indicative No.
+                                    PPMP Type
                                 </div>
-
-                                <div className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                                    {
-                                        ppmp.indicative_no
-                                    }
+                                <div className="mt-1 text-sm font-bold capitalize">
+                                    {ppmp.plan_type}
                                 </div>
                             </div>
 
-                            <div className="border-b border-border px-4 py-3 xl:border-b-0 xl:border-r">
+                            <div className="border-b border-border px-4 py-3 sm:border-r xl:border-b-0">
                                 <div className="pms-readonly-label">
-                                    Items
+                                    Version / Revision
                                 </div>
-
                                 <div className="mt-1 text-sm font-bold text-emerald-700 dark:text-emerald-300">
-                                    {
-                                        ppmp.items
-                                            .length
-                                    }
+                                    {ppmp.version_label}
                                 </div>
                             </div>
 
@@ -1247,17 +1435,14 @@ export default function ShowPpmp({
                                 <div className="pms-readonly-label">
                                     Total Budget
                                 </div>
-
                                 <div className="mt-1 font-bold tabular-nums text-primary">
-                                    {formatCurrency(
-                                        ppmp.total_budget,
-                                    )}
+                                    {formatCurrency(ppmp.total_budget)}
                                 </div>
                             </div>
                         </div>
 
                         {/* TABS */}
-                        <div className="grid border-b border-border sm:grid-cols-3">
+                        <div className="grid border-b border-border sm:grid-cols-2 lg:grid-cols-5">
                             <button
                                 type="button"
                                 onClick={() =>
@@ -1265,7 +1450,7 @@ export default function ShowPpmp({
                                         'information',
                                     )
                                 }
-                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left sm:border-r ${
+                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left border-r ${
                                     activeTab ===
                                     'information'
                                         ? 'border-b-blue-600 bg-blue-50/60 text-blue-800 dark:bg-blue-950/20 dark:text-blue-300'
@@ -1282,7 +1467,7 @@ export default function ShowPpmp({
                                     </div>
 
                                     <div className="mt-0.5 text-sm font-bold">
-                                        PPMP Information
+                                        Information
                                     </div>
                                 </div>
                             </button>
@@ -1294,7 +1479,7 @@ export default function ShowPpmp({
                                         'items',
                                     )
                                 }
-                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left sm:border-r ${
+                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left border-r ${
                                     activeTab ===
                                     'items'
                                         ? 'border-b-emerald-600 bg-emerald-50/60 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300'
@@ -1311,7 +1496,7 @@ export default function ShowPpmp({
                                     </div>
 
                                     <div className="mt-0.5 flex items-center gap-2 text-sm font-bold">
-                                        Procurement Items
+                                        Items
 
                                         <span className="text-emerald-600">
                                             {
@@ -1330,7 +1515,7 @@ export default function ShowPpmp({
                                         'signatories',
                                     )
                                 }
-                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left ${
+                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left border-r ${
                                     activeTab ===
                                     'signatories'
                                         ? 'border-b-violet-600 bg-violet-50/60 text-violet-800 dark:bg-violet-950/20 dark:text-violet-300'
@@ -1348,6 +1533,78 @@ export default function ShowPpmp({
 
                                     <div className="mt-0.5 text-sm font-bold">
                                         Signatories
+                                    </div>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setActiveTab(
+                                        'attachments',
+                                    )
+                                }
+                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left border-r ${
+                                    activeTab ===
+                                    'attachments'
+                                        ? 'border-b-sky-600 bg-sky-50/60 text-sky-800 dark:bg-sky-950/20 dark:text-sky-300'
+                                        : 'border-b-transparent bg-card hover:bg-secondary/30'
+                                }`}
+                            >
+                                <div className="flex size-8 items-center justify-center border border-sky-200 bg-sky-50 text-sky-600 dark:border-sky-900 dark:bg-sky-950/30">
+                                    <Paperclip className="size-4" />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                                        Section 04
+                                    </div>
+
+                                    <div className="mt-0.5 flex items-center gap-2 text-sm font-bold">
+                                        Attachments
+
+                                        <span className="text-sky-600">
+                                            {
+                                                ppmp.attachments
+                                                    ?.length ?? 0
+                                            }
+                                        </span>
+                                    </div>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setActiveTab(
+                                        'history',
+                                    )
+                                }
+                                className={`flex min-h-[64px] items-center gap-3 border-b-[3px] px-5 text-left ${
+                                    activeTab ===
+                                    'history'
+                                        ? 'border-b-amber-600 bg-amber-50/60 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300'
+                                        : 'border-b-transparent bg-card hover:bg-secondary/30'
+                                }`}
+                            >
+                                <div className="flex size-8 items-center justify-center border border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-900 dark:bg-amber-950/30">
+                                    <History className="size-4" />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                                        Section 05
+                                    </div>
+
+                                    <div className="mt-0.5 flex items-center gap-2 text-sm font-bold">
+                                        History
+
+                                        <span className="text-amber-600">
+                                            {
+                                                ppmp.histories
+                                                    ?.length ?? 0
+                                            }
+                                        </span>
                                     </div>
                                 </div>
                             </button>
@@ -1369,7 +1626,7 @@ export default function ShowPpmp({
 
                                                 <div>
                                                     <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
-                                                        Current Workflow
+                                                        Current Workflow (Status)
                                                     </div>
 
                                                     <div className="mt-1">
@@ -1467,6 +1724,21 @@ export default function ShowPpmp({
                                                 </Button>
                                             )}
 
+                                            {can.cancel && (
+                                                <Button
+                                                    type="button"
+                                                    variant="destructive"
+                                                    disabled={
+                                                        workflowProcessing
+                                                    }
+                                                    onClick={
+                                                        cancelPpmp
+                                                    }
+                                                >
+                                                    Cancel PPMP
+                                                </Button>
+                                            )}
+
                                             {!hasWorkflowAction && (
                                                 <span className="text-xs text-muted-foreground">
                                                     No workflow action is currently required from your account.
@@ -1475,11 +1747,20 @@ export default function ShowPpmp({
                                         </div>
                                     </div>
 
-                                    {workflowError && (
+                                    {workflowErrors.length > 1 ? (
                                         <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                                            {
-                                                workflowError
-                                            }
+                                            <div className="font-bold mb-1">
+                                                Please resolve the following before proceeding:
+                                            </div>
+                                            <ul className="list-disc list-inside space-y-1 text-xs">
+                                                {workflowErrors.map((err, i) => (
+                                                    <li key={i}>{err}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    ) : (workflowError || workflowErrors[0]) && (
+                                        <div className="border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+                                            {workflowError || workflowErrors[0]}
                                         </div>
                                     )}
 
@@ -1691,7 +1972,7 @@ export default function ShowPpmp({
 
                                                 <div className="border-b border-border bg-sky-50/20 p-5 dark:bg-sky-950/10">
                                                     <div className="pms-readonly-label">
-                                                        Original PPMP No.
+                                                        Original PPMP ID
                                                     </div>
 
                                                     <div className="mt-2 font-bold text-blue-700 dark:text-blue-300">
@@ -1773,7 +2054,7 @@ export default function ShowPpmp({
 
                                                 <div className="border-b border-border bg-blue-50/20 p-5 sm:border-r dark:bg-blue-950/10">
                                                     <div className="pms-readonly-label">
-                                                        End-User Unit
+                                                        End-User / Implementing Unit
                                                     </div>
 
                                                     <div className="mt-2 text-lg font-bold text-blue-700 dark:text-blue-300">
@@ -1791,7 +2072,7 @@ export default function ShowPpmp({
 
                                                 <div className="border-b border-border bg-violet-50/20 p-5 dark:bg-violet-950/10">
                                                     <div className="pms-readonly-label">
-                                                        Coordinator
+                                                        PPMP Coordinator
                                                     </div>
 
                                                     <div className="mt-2 font-bold">
@@ -1937,6 +2218,54 @@ export default function ShowPpmp({
                                                     </div>
                                                 </dl>
                                             </div>
+
+                                            {ppmp.versions && ppmp.versions.length > 0 && (
+                                                <div className="border-t border-border p-5">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                                                            Series Revisions ({ppmp.versions.length})
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setActiveTab('history')}
+                                                            className="text-[10px] font-bold text-primary hover:underline"
+                                                        >
+                                                            View All
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="mt-3 space-y-2">
+                                                        {ppmp.versions.map((ver) => (
+                                                            <Link
+                                                                key={ver.id}
+                                                                href={`/ppmps/${ver.id}`}
+                                                                className={`flex items-center justify-between rounded-md border p-2 text-xs transition-colors ${
+                                                                    ver.is_current
+                                                                        ? 'border-blue-300 bg-blue-50/80 font-bold text-blue-900 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200'
+                                                                        : 'border-border bg-card hover:bg-secondary/40 text-foreground'
+                                                                }`}
+                                                            >
+                                                                <div>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span>{ver.version_label}</span>
+                                                                        {ver.is_current && (
+                                                                            <span className="rounded bg-blue-200 px-1 py-0.2 text-[9px] font-bold text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                                                                                Current
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-[10px] font-normal text-muted-foreground">
+                                                                        {ver.ppmp_no}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <StatusBadge status={ver.status} className="scale-90 origin-right" />
+                                                                </div>
+                                                            </Link>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </aside>
                                     </div>
                                 </div>
@@ -1972,7 +2301,7 @@ export default function ShowPpmp({
                                     ) : (
                                         <>
                                             <DataTableShell>
-                                                <table className="pms-table min-w-[1180px]">
+                                                <table className="pms-table min-w-[1420px]">
                                                     <thead>
                                                         <tr>
                                                             <th className="w-[55px]">
@@ -1983,11 +2312,11 @@ export default function ShowPpmp({
                                                                 Procurement Item
                                                             </th>
 
-                                                            <th className="w-[150px]">
+                                                            <th className="w-[180px]">
                                                                 Project Type
                                                             </th>
 
-                                                            <th className="w-[150px]">
+                                                            <th className="w-[320px]">
                                                                 Quantity / Size
                                                             </th>
 
@@ -2060,13 +2389,77 @@ export default function ShowPpmp({
                                                                     </td>
 
                                                                     <td>
-                                                                        {item.project_type ||
-                                                                            '—'}
+                                                                        <div className="text-xs font-semibold leading-5">
+                                                                            {projectTypeSummary(
+                                                                                item,
+                                                                            )}
+                                                                        </div>
                                                                     </td>
 
                                                                     <td>
-                                                                        {item.quantity_size ||
-                                                                            '—'}
+                                                                        {itemDetails(
+                                                                            item,
+                                                                        ).length >
+                                                                        0 ? (
+                                                                            <div className="space-y-2">
+                                                                                {itemDetails(
+                                                                                    item,
+                                                                                )
+                                                                                    .slice(
+                                                                                        0,
+                                                                                        3,
+                                                                                    )
+                                                                                    .map(
+                                                                                        (
+                                                                                            detail,
+                                                                                            detailIndex,
+                                                                                        ) => (
+                                                                                            <div
+                                                                                                key={
+                                                                                                    detail.id ??
+                                                                                                    detailIndex
+                                                                                                }
+                                                                                                className="border-l-2 border-emerald-300 pl-2"
+                                                                                            >
+                                                                                                <div className="text-xs font-medium leading-5">
+                                                                                                    {detailPreview(
+                                                                                                        detail,
+                                                                                                    )}
+                                                                                                </div>
+
+                                                                                                {detail.estimated_amount && (
+                                                                                                    <div className="mt-0.5 text-[10px] font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                                                                                                        {formatCurrency(
+                                                                                                            detail.estimated_amount,
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        ),
+                                                                                    )}
+
+                                                                                {itemDetails(
+                                                                                    item,
+                                                                                )
+                                                                                    .length >
+                                                                                    3 && (
+                                                                                    <div className="text-[10px] font-semibold text-muted-foreground">
+                                                                                        +
+                                                                                        {itemDetails(
+                                                                                            item,
+                                                                                        )
+                                                                                            .length -
+                                                                                            3}{' '}
+                                                                                        more
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="text-xs text-muted-foreground">
+                                                                                {item.quantity_size ||
+                                                                                    '—'}
+                                                                            </div>
+                                                                        )}
                                                                     </td>
 
                                                                     <td>
@@ -2232,12 +2625,273 @@ export default function ShowPpmp({
                                                         {ppmp.submitted_by_position ||
                                                             '—'}
                                                     </dd>
-                                                </div>
+                                                 </div>
                                             </dl>
                                         </div>
                                     </div>
 
-                                    {/* HISTORY */}
+                                    {(ppmp.approver || ppmp.approved_at) && (
+                                        <div className="border-b border-border p-5">
+                                            <div className="border-l-[3px] border-emerald-500 pl-3">
+                                                <div className="text-sm font-bold">
+                                                    Approved By
+                                                </div>
+                                                <div className="mt-1 text-xs text-muted-foreground">
+                                                    Procurement Office / Approving Authority
+                                                </div>
+                                            </div>
+
+                                            <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+                                                <div>
+                                                    <dt className="pms-readonly-label">
+                                                        Approver
+                                                    </dt>
+                                                    <dd className="mt-1 font-bold">
+                                                        {ppmp.approver?.name || 'GSPS Administrator'}
+                                                    </dd>
+                                                </div>
+
+                                                <div>
+                                                    <dt className="pms-readonly-label">
+                                                        Approval Date
+                                                    </dt>
+                                                    <dd className="mt-1">
+                                                        {ppmp.approved_at || '—'}
+                                                    </dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                    )}
+
+                                    <div className="p-5">
+                                        <div className="border-l-[3px] border-slate-500 pl-3">
+                                            <div className="text-sm font-bold">
+                                                General Remarks
+                                            </div>
+                                            <div className="mt-1 text-xs text-muted-foreground">
+                                                Overall notes or observations for this PPMP revision
+                                            </div>
+                                        </div>
+
+                                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                                            {ppmp.remarks || 'No general remarks provided for this PPMP.'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ATTACHMENTS */}
+                            {activeTab === 'attachments' && (
+                                <div>
+                                    <div className="border-b border-border bg-sky-50/35 px-5 py-4 dark:bg-sky-950/10">
+                                        <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-sky-700 dark:text-sky-300">
+                                            Section 04
+                                        </div>
+                                        <h2 className="mt-1 text-base font-bold">
+                                            Supporting Documents & Scanned Copies
+                                        </h2>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            Official approved copy and documents attached to this PPMP and its procurement items.
+                                        </p>
+                                    </div>
+
+                                    {(can.upload_attachment ?? can.edit) && (
+                                        <div className="border-b border-border bg-sky-50/20 p-5 dark:bg-sky-950/10">
+                                            <form
+                                                onSubmit={uploadGeneralAttachment}
+                                                className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                                            >
+                                                <div className="flex-1">
+                                                    <div className="text-xs font-bold text-sky-900 dark:text-sky-300">
+                                                        Upload General Supporting Document
+                                                    </div>
+                                                    <div className="mt-0.5 text-xs text-muted-foreground">
+                                                        Attach files applicable to the entire PPMP (e.g. Activity Design, Authority to Purchase, Board Resolution). Max 20MB.
+                                                    </div>
+                                                    <input
+                                                        key={generalInputKey}
+                                                        type="file"
+                                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                                                        onChange={(e) => {
+                                                            setGeneralFile(e.target.files?.[0] ?? null);
+                                                            setGeneralUploadError(null);
+                                                        }}
+                                                        className="mt-2 block w-full text-xs file:mr-2 file:border file:border-border file:bg-background file:px-2 file:py-1 file:text-xs file:font-medium"
+                                                    />
+                                                    {generalUploadError && (
+                                                        <p className="mt-1 text-xs text-red-600">
+                                                            {generalUploadError}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    disabled={generalUploading || !generalFile}
+                                                    className="shrink-0 self-start sm:self-end"
+                                                >
+                                                    <Upload className="size-3.5" />
+                                                    {generalUploading ? 'Uploading...' : 'Upload Document'}
+                                                </Button>
+                                            </form>
+                                        </div>
+                                    )}
+
+                                    {ppmp.approved_copy && (
+                                        <div className="border-b border-border bg-emerald-50/30 p-5 dark:bg-emerald-950/15">
+                                            <div className="flex flex-wrap items-center justify-between gap-4">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="flex size-10 shrink-0 items-center justify-center border border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                                        <CheckCircle2 className="size-5" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                                                                Approved Official Copy
+                                                            </span>
+                                                            <span className="inline-flex rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                                                Scanned PDF
+                                                            </span>
+                                                        </div>
+                                                        <div className="mt-1 text-sm font-bold text-foreground">
+                                                            {ppmp.approved_copy.original_name}
+                                                        </div>
+                                                        <div className="mt-0.5 text-xs text-muted-foreground">
+                                                            {formatBytes(ppmp.approved_copy.file_size)} · Approved on {ppmp.approved_at ?? '—'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <Button asChild size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                                                    <a href={`/ppmps/${ppmp.id}/attachments/${ppmp.approved_copy.id}/download`}>
+                                                        <Download className="size-4" />
+                                                        Download Approved Copy
+                                                    </a>
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {(!ppmp.attachments || ppmp.attachments.length === 0) && !ppmp.approved_copy ? (
+                                        <EmptyState
+                                            icon={Paperclip}
+                                            title="No attachments uploaded"
+                                            description="Supporting documents uploaded to this PPMP or individual procurement items will appear here."
+                                        />
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="pms-table min-w-[950px]">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="w-[50px]">#</th>
+                                                        <th className="w-[280px]">File Name</th>
+                                                        <th className="w-[170px]">Document Type</th>
+                                                        <th className="w-[240px]">Associated With</th>
+                                                        <th className="w-[160px]">Uploaded By</th>
+                                                        <th className="w-[160px]">Uploaded At</th>
+                                                        <th className="w-[100px] text-right">File Size</th>
+                                                        <th className="w-[120px] text-right">Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {ppmp.attachments.map((attachment, index) => (
+                                                        <tr key={attachment.id}>
+                                                            <td className="font-semibold text-muted-foreground">
+                                                                {index + 1}
+                                                            </td>
+                                                            <td>
+                                                                <div className="flex items-center gap-2">
+                                                                    <FileText className="size-4 text-primary shrink-0" />
+                                                                    <span className="font-semibold text-foreground break-all">
+                                                                        {attachment.original_name}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <span className={`inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                                                                    attachment.document_type === 'approved_ppmp'
+                                                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                                                        : 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
+                                                                }`}>
+                                                                    {attachment.document_type === 'approved_ppmp' ? 'Approved Copy' : 'Supporting Document'}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                {attachment.item_title ? (
+                                                                    <div className="max-w-[240px] truncate text-xs font-medium text-foreground">
+                                                                        {attachment.item_title}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-xs text-muted-foreground">
+                                                                        General PPMP
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                            <td className="text-xs">
+                                                                {attachment.uploaded_by}
+                                                            </td>
+                                                            <td className="text-xs text-muted-foreground whitespace-nowrap">
+                                                                {attachment.created_at ?? '—'}
+                                                            </td>
+                                                            <td className="text-right text-xs whitespace-nowrap font-mono">
+                                                                {formatBytes(attachment.file_size)}
+                                                            </td>
+                                                            <td className="text-right">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        asChild
+                                                                    >
+                                                                        <a
+                                                                            href={`/ppmps/${ppmp.id}/attachments/${attachment.id}/download`}
+                                                                        >
+                                                                            <Download className="size-3.5" />
+                                                                            Download
+                                                                        </a>
+                                                                    </Button>
+
+                                                                    {can.edit && attachment.document_type !== 'approved_ppmp' && (
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            size="sm"
+                                                                            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/20"
+                                                                            onClick={() =>
+                                                                                deleteAttachment(
+                                                                                    attachment.id,
+                                                                                    attachment.original_name,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            Delete
+                                                                        </Button>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* HISTORY */}
+                            {activeTab === 'history' && (
+                                <div>
+                                    <div className="border-b border-border bg-amber-50/35 px-5 py-4 dark:bg-amber-950/10">
+                                        <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-amber-700 dark:text-amber-300">
+                                            Section 05
+                                        </div>
+                                        <h2 className="mt-1 text-base font-bold">
+                                            Workflow & Version History
+                                        </h2>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            Complete audit trail of status transitions and Indicative revision lineage.
+                                        </p>
+                                    </div>
+
+                                    {/* STATUS HISTORY */}
                                     <div>
                                         <div className="flex items-center gap-3 border-b border-border bg-secondary/25 px-5 py-4">
                                             <History className="size-4 text-primary" />
@@ -2596,10 +3250,10 @@ export default function ShowPpmp({
                                             </div>
                                         </div>
 
-                                        <dl className="grid gap-4 sm:grid-cols-2">
-                                            <div className="sm:col-span-2">
+                                        <dl>
+                                            <div>
                                                 <dt className="pms-readonly-label">
-                                                    General Description and Objective
+                                                    Item No. 1 · General Description and Objective
                                                 </dt>
 
                                                 <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">
@@ -2607,29 +3261,159 @@ export default function ShowPpmp({
                                                         '—'}
                                                 </dd>
                                             </div>
-
-                                            <div>
-                                                <dt className="pms-readonly-label">
-                                                    Project Type
-                                                </dt>
-
-                                                <dd className="mt-1 font-semibold">
-                                                    {selectedItem.project_type ||
-                                                        '—'}
-                                                </dd>
-                                            </div>
-
-                                            <div>
-                                                <dt className="pms-readonly-label">
-                                                    Quantity / Size
-                                                </dt>
-
-                                                <dd className="mt-1">
-                                                    {selectedItem.quantity_size ||
-                                                        '—'}
-                                                </dd>
-                                            </div>
                                         </dl>
+                                    </section>
+
+                                    {/* LINKED ITEM 2 + ITEM 3 */}
+                                    <section className="p-5">
+                                        <div className="mb-4 border-l-[3px] border-emerald-500 pl-3">
+                                            <div className="text-sm font-bold">
+                                                Item No. 2 + Item No. 3
+                                            </div>
+
+                                            <div className="mt-1 text-xs text-muted-foreground">
+                                                Linked Project Type and Quantity / Size entries.
+                                            </div>
+                                        </div>
+
+                                        {itemDetails(
+                                            selectedItem,
+                                        ).length >
+                                        0 ? (
+                                            <div className="space-y-4">
+                                                {itemDetails(
+                                                    selectedItem,
+                                                ).map(
+                                                    (
+                                                        detail,
+                                                        detailIndex,
+                                                    ) => (
+                                                        <div
+                                                            key={
+                                                                detail.id ??
+                                                                detailIndex
+                                                            }
+                                                            className="border border-border bg-secondary/10"
+                                                        >
+                                                            <div className="flex flex-col gap-2 border-b border-border bg-secondary/25 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                                                                <div>
+                                                                    <div className="text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                                                                        Linked Item 2 + Item 3
+                                                                    </div>
+
+                                                                    <div className="mt-0.5 text-sm font-bold">
+                                                                        Project / Requirement{' '}
+                                                                        {detailIndex +
+                                                                            1}
+                                                                    </div>
+                                                                </div>
+
+                                                                {detail.estimated_amount && (
+                                                                    <div className="text-left sm:text-right">
+                                                                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+                                                                            Estimated Amount
+                                                                        </div>
+
+                                                                        <div className="mt-0.5 font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                                                                            {formatCurrency(
+                                                                                detail.estimated_amount,
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            <dl className="grid gap-0 sm:grid-cols-2">
+                                                                <div className="border-b border-border p-4 sm:border-r">
+                                                                    <dt className="pms-readonly-label">
+                                                                        Item No. 2 · Project Type
+                                                                    </dt>
+
+                                                                    <dd className="mt-1 font-semibold">
+                                                                        {detail.project_type ||
+                                                                            '—'}
+                                                                    </dd>
+                                                                </div>
+
+                                                                <div className="border-b border-border p-4">
+                                                                    <dt className="pms-readonly-label">
+                                                                        Quantity
+                                                                    </dt>
+
+                                                                    <dd className="mt-1 font-semibold">
+                                                                        {detail.quantity ||
+                                                                            '—'}
+                                                                    </dd>
+                                                                </div>
+
+                                                                <div className="border-b border-border p-4 sm:border-r">
+                                                                    <dt className="pms-readonly-label">
+                                                                        Unit
+                                                                    </dt>
+
+                                                                    <dd className="mt-1">
+                                                                        {detail.unit ||
+                                                                            '—'}
+                                                                    </dd>
+                                                                </div>
+
+                                                                <div className="border-b border-border p-4">
+                                                                    <dt className="pms-readonly-label">
+                                                                        Item / Requirement
+                                                                    </dt>
+
+                                                                    <dd className="mt-1">
+                                                                        {detail.item_description ||
+                                                                            '—'}
+                                                                    </dd>
+                                                                </div>
+
+                                                                <div className="p-4 sm:col-span-2">
+                                                                    <dt className="pms-readonly-label">
+                                                                        Size / Specification
+                                                                    </dt>
+
+                                                                    <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">
+                                                                        {detail.size_specification ||
+                                                                            '—'}
+                                                                    </dd>
+                                                                </div>
+                                                            </dl>
+                                                        </div>
+                                                    ),
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <div className="border border-dashed border-border bg-secondary/20 p-4">
+                                                <div className="text-xs font-bold">
+                                                    Historical / Legacy Item
+                                                </div>
+
+                                                <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+                                                    <div>
+                                                        <dt className="pms-readonly-label">
+                                                            Project Type
+                                                        </dt>
+
+                                                        <dd className="mt-1 font-semibold">
+                                                            {selectedItem.project_type ||
+                                                                '—'}
+                                                        </dd>
+                                                    </div>
+
+                                                    <div>
+                                                        <dt className="pms-readonly-label">
+                                                            Quantity / Size
+                                                        </dt>
+
+                                                        <dd className="mt-1">
+                                                            {selectedItem.quantity_size ||
+                                                                '—'}
+                                                        </dd>
+                                                    </div>
+                                                </dl>
+                                            </div>
+                                        )}
                                     </section>
 
                                     {/* PROCUREMENT */}
@@ -2724,7 +3508,7 @@ export default function ShowPpmp({
                                         <dl className="grid gap-4 sm:grid-cols-2">
                                             <div>
                                                 <dt className="pms-readonly-label">
-                                                    Source of Funds
+                                                    Item No. 9 · Source of Funds
                                                 </dt>
 
                                                 <dd className="mt-1">
@@ -2735,7 +3519,7 @@ export default function ShowPpmp({
 
                                             <div>
                                                 <dt className="pms-readonly-label">
-                                                    Estimated Budget
+                                                    Item No. 10 · Estimated Budget / Authorized Budgetary Allocation (PhP)
                                                 </dt>
 
                                                 <dd className="mt-1 text-lg font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
@@ -2743,6 +3527,18 @@ export default function ShowPpmp({
                                                         selectedItem.estimated_budget,
                                                     )}
                                                 </dd>
+
+                                                <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-violet-700 dark:text-violet-300">
+                                                    System Calculated · Read-Only
+                                                </div>
+
+                                                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                    {itemHasIndividualAmounts(
+                                                        selectedItem,
+                                                    )
+                                                        ? 'Calculated from the individual estimated amounts of all linked Project / Requirement entries.'
+                                                        : 'Based on the fallback estimated budget because individual entry amounts were not provided.'}
+                                                </p>
                                             </div>
                                         </dl>
                                     </section>
@@ -2751,8 +3547,12 @@ export default function ShowPpmp({
                                     <section className="p-5">
                                         <div className="mb-4 border-l-[3px] border-sky-500 pl-3">
                                             <div className="text-sm font-bold">
-                                                Supporting Documents
+                                                Item No. 11 · Supporting Documents
                                             </div>
+
+                                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                                Optional. Documents attached to this procurement item are listed below.
+                                            </p>
                                         </div>
 
                                         <ItemAttachments
@@ -2772,7 +3572,7 @@ export default function ShowPpmp({
                                     <section className="p-5">
                                         <div className="mb-4 border-l-[3px] border-slate-500 pl-3">
                                             <div className="text-sm font-bold">
-                                                Remarks
+                                                Item No. 12 · Remarks
                                             </div>
                                         </div>
 

@@ -235,7 +235,7 @@ export default function Dashboard({
 }: DashboardProps) {
     const office = [
         userSummary.office_code,
-        userSummary.office_name,
+        // userSummary.office_name,
     ]
         .filter(Boolean)
         .join(' — ');

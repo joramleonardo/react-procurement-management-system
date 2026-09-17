@@ -13,7 +13,9 @@ import {
     router,
 } from '@inertiajs/react';
 import {
+    Eye,
     FileText,
+    Pencil,
     Search,
 } from 'lucide-react';
 import {
@@ -49,6 +51,8 @@ type PurchaseRequestRecord = {
     ppmp: Ppmp;
     office: Office;
     requester: Requester;
+
+    can_edit?: boolean;
 
     updated_at: string | null;
 };
@@ -429,7 +433,7 @@ export default function PurchaseRequestIndex({
                         </div>
                     }
                 >
-                    <table className="pms-table min-w-[1180px]">
+                    <table className="pms-table min-w-[1280px]">
                         <thead>
                             <tr>
                                 <th className="w-[190px]">
@@ -468,6 +472,10 @@ export default function PurchaseRequestIndex({
                                 <th className="w-[180px]">
                                     Updated
                                 </th>
+
+                                <th className="w-[110px] text-right">
+                                    Actions
+                                </th>
                             </tr>
                         </thead>
 
@@ -479,7 +487,7 @@ export default function PurchaseRequestIndex({
                                 <tr>
                                     <td
                                         colSpan={
-                                            9
+                                            10
                                         }
                                         className="p-0!"
                                     >
@@ -517,14 +525,18 @@ export default function PurchaseRequestIndex({
                                                 key={
                                                     pr.id
                                                 }
+                                                className="hover:bg-muted/50 transition-colors"
                                             >
                                                 {/* PR NUMBER */}
                                                 <td>
-                                                    <div className="font-semibold text-foreground">
+                                                    <Link
+                                                        href={`/purchase-requests/${pr.id}`}
+                                                        className="font-semibold text-primary hover:underline"
+                                                    >
                                                         {
                                                             pr.pr_no
                                                         }
-                                                    </div>
+                                                    </Link>
 
                                                     {pr.purpose && (
                                                         <div
@@ -621,6 +633,39 @@ export default function PurchaseRequestIndex({
                                                 <td className="whitespace-nowrap text-muted-foreground">
                                                     {pr.updated_at ??
                                                         '—'}
+                                                </td>
+
+                                                {/* ACTIONS */}
+                                                <td className="text-right">
+                                                    <div className="flex items-center justify-end gap-1.5">
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            asChild
+                                                        >
+                                                            <Link
+                                                                href={`/purchase-requests/${pr.id}`}
+                                                            >
+                                                                <Eye className="size-3.5" />
+                                                                View
+                                                            </Link>
+                                                        </Button>
+
+                                                        {pr.can_edit && (
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                asChild
+                                                            >
+                                                                <Link
+                                                                    href={`/purchase-requests/${pr.id}/edit`}
+                                                                >
+                                                                    <Pencil className="size-3.5" />
+                                                                    Edit
+                                                                </Link>
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ),

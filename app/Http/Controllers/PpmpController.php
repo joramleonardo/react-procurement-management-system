@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Ppmp\StorePpmpRequest;
 use App\Http\Requests\Ppmp\UpdatePpmpRequest;
 use App\Models\Ppmp;
+use App\Models\PpmpItem;
 use App\Models\PpmpSeries;
 use App\Models\PurchaseRequestItem;
 use App\Services\AuditLogService;
@@ -661,95 +662,130 @@ class PpmpController extends Controller
                             continue;
                         }
 
+                        /*
+                         * Item No. 10 is server-controlled.
+                         *
+                         * Complete per-entry costing:
+                         *     SUM(details.estimated_amount)
+                         *
+                         * No per-entry costing:
+                         *     use the optional fallback
+                         *     estimated_budget value.
+                         */
                         $budgetCents =
                             $this
-                                ->moneyToCents(
-                                    $item[
-                                        'estimated_budget'
-                                    ]
-                                    ?? 0
+                                ->resolvedItemBudgetCents(
+                                    $item
                                 );
 
                         $totalCents +=
                             $budgetCents;
 
-                        $ppmp
-                            ->items()
-                            ->create([
-                                'description_objective' =>
-                                    $item[
-                                        'description_objective'
-                                    ]
-                                    ?? '',
-
-                                'project_type' =>
-                                    $item[
-                                        'project_type'
-                                    ]
-                                    ?? '',
-
-                                'quantity_size' =>
-                                    $item[
-                                        'quantity_size'
-                                    ]
-                                    ?? '',
-
-                                'recommended_mode_of_procurement' =>
-                                    $item[
-                                        'recommended_mode_of_procurement'
-                                    ]
-                                    ?? '',
-
-                                'pre_procurement_conference' =>
-                                    (bool) (
+                        $savedItem =
+                            $ppmp
+                                ->items()
+                                ->create([
+                                    'description_objective' =>
                                         $item[
-                                            'pre_procurement_conference'
+                                            'description_objective'
                                         ]
-                                        ?? false
-                                    ),
+                                        ?? '',
 
-                                'procurement_start_month' =>
-                                    $item[
-                                        'procurement_start_month'
-                                    ]
-                                    ?? '',
+                                    /*
+                                     * Legacy compatibility columns.
+                                     *
+                                     * New Item No. 2 + Item No. 3 data
+                                     * is stored authoritatively in
+                                     * ppmp_item_details.
+                                     */
+                                    'project_type' =>
+                                        $this
+                                            ->legacyProjectType(
+                                                $item
+                                            ),
 
-                                'procurement_end_month' =>
-                                    $item[
-                                        'procurement_end_month'
-                                    ]
-                                    ?? '',
+                                    'quantity_size' =>
+                                        $this
+                                            ->legacyQuantitySize(
+                                                $item
+                                            ),
 
-                                'expected_delivery_month' =>
-                                    $item[
-                                        'expected_delivery_month'
-                                    ]
-                                    ?? '',
+                                    'recommended_mode_of_procurement' =>
+                                        $item[
+                                            'recommended_mode_of_procurement'
+                                        ]
+                                        ?? '',
 
-                                'source_of_funds' =>
-                                    $item[
-                                        'source_of_funds'
-                                    ]
-                                    ?? '',
-
-                                'estimated_budget' =>
-                                    $this
-                                        ->centsToMoney(
-                                            $budgetCents
+                                    'pre_procurement_conference' =>
+                                        (bool) (
+                                            $item[
+                                                'pre_procurement_conference'
+                                            ]
+                                            ?? false
                                         ),
 
-                                'approved_pr_amount' =>
-                                    '0.00',
+                                    'procurement_start_month' =>
+                                        $item[
+                                            'procurement_start_month'
+                                        ]
+                                        ?? '',
 
-                                'remarks' =>
-                                    $item[
-                                        'remarks'
-                                    ]
-                                    ?? null,
+                                    'procurement_end_month' =>
+                                        $item[
+                                            'procurement_end_month'
+                                        ]
+                                        ?? '',
 
-                                'sort_order' =>
-                                    $index + 1,
-                            ]);
+                                    'expected_delivery_month' =>
+                                        $item[
+                                            'expected_delivery_month'
+                                        ]
+                                        ?? '',
+
+                                    'source_of_funds' =>
+                                        $item[
+                                            'source_of_funds'
+                                        ]
+                                        ?? '',
+
+                                    'estimated_budget' =>
+                                        $this
+                                            ->centsToMoney(
+                                                $budgetCents
+                                            ),
+
+                                    'approved_pr_amount' =>
+                                        '0.00',
+
+                                    'remarks' =>
+                                        $item[
+                                            'remarks'
+                                        ]
+                                        ?? null,
+
+                                    'sort_order' =>
+                                        $index + 1,
+                                ]);
+
+                        /*
+                         * Save the repeatable linked Item No. 2
+                         * + Item No. 3 records.
+                         *
+                         * If this request still came from the old
+                         * frontend, create one legacy detail row so
+                         * the new database structure remains complete.
+                         */
+                        $this
+                            ->syncItemDetails(
+                                item:
+                                    $savedItem,
+
+                                itemData:
+                                    $item,
+
+                                preserveWhenMissing:
+                                    false
+                            );
                     }
 
                     $totalBudget =
@@ -909,7 +945,779 @@ class PpmpController extends Controller
             }
         }
 
+        foreach (
+            ($item['details'] ?? [])
+            as $detail
+        ) {
+            if (
+                is_array($detail)
+                && $this
+                    ->detailHasContent(
+                        $detail
+                    )
+            ) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    /**
+     * Determine whether one linked Item No. 2 + Item No. 3
+     * detail row contains meaningful data.
+     *
+     * @param array<string, mixed> $detail
+     */
+    private function detailHasContent(
+        array $detail
+    ): bool {
+        $fields = [
+            'project_type',
+            'quantity',
+            'unit',
+            'item_description',
+            'size_specification',
+            'estimated_amount',
+        ];
+
+        foreach (
+            $fields
+            as $field
+        ) {
+            $value =
+                $detail[$field]
+                ?? null;
+
+            if (
+                $value !== null
+                && $value !== ''
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolve the authoritative Item No. 10 budget for one PPMP item.
+     *
+     * Rule:
+     * - If every meaningful Item No. 2 + Item No. 3 detail has an
+     *   estimated amount, Item No. 10 is the sum of those amounts.
+     * - If no meaningful detail has an estimated amount, the existing
+     *   ppmp_items.estimated_budget payload is treated as the optional
+     *   fallback budget.
+     * - Partial detail costing is rejected defensively even though the
+     *   Form Requests already validate the same rule.
+     *
+     * @param array<string, mixed> $itemData
+     */
+    private function resolvedItemBudgetCents(
+        array $itemData
+    ): int {
+        if (
+            ! array_key_exists(
+                'details',
+                $itemData
+            )
+            || ! is_array(
+                $itemData['details']
+            )
+        ) {
+            return $this
+                ->moneyToCents(
+                    $itemData[
+                        'estimated_budget'
+                    ] ?? 0
+                );
+        }
+
+        $meaningfulDetails = [];
+
+        foreach (
+            $itemData['details']
+            as $detailIndex =>
+                $detailData
+        ) {
+            if (
+                ! is_array(
+                    $detailData
+                )
+                || ! $this
+                    ->detailHasContent(
+                        $detailData
+                    )
+            ) {
+                continue;
+            }
+
+            $meaningfulDetails[] = [
+                'index' =>
+                    $detailIndex,
+
+                'detail' =>
+                    $detailData,
+            ];
+        }
+
+        if (
+            $meaningfulDetails === []
+        ) {
+            return $this
+                ->moneyToCents(
+                    $itemData[
+                        'estimated_budget'
+                    ] ?? 0
+                );
+        }
+
+        $withAmount = [];
+        $withoutAmount = [];
+
+        foreach (
+            $meaningfulDetails
+            as $entry
+        ) {
+            $amount =
+                $entry['detail'][
+                    'estimated_amount'
+                ] ?? null;
+
+            if (
+                $amount !== null
+                && $amount !== ''
+            ) {
+                $withAmount[] =
+                    $entry;
+            } else {
+                $withoutAmount[] =
+                    $entry['index'];
+            }
+        }
+
+        /*
+         * No per-entry amounts supplied: use the optional fallback
+         * amount carried by ppmp_items.estimated_budget.
+         */
+        if (
+            $withAmount === []
+        ) {
+            return $this
+                ->moneyToCents(
+                    $itemData[
+                        'estimated_budget'
+                    ] ?? 0
+                );
+        }
+
+        /*
+         * Some, but not all, entries have amounts. Never compute an
+         * incomplete Item No. 10 total.
+         */
+        if (
+            $withoutAmount !== []
+        ) {
+            throw ValidationException::withMessages([
+                'items' =>
+                    'Individual estimated amounts must be provided for all Project / Requirement entries or left blank for all entries so the fallback estimated budget can be used.',
+            ]);
+        }
+
+        $totalCents = 0;
+
+        foreach (
+            $withAmount
+            as $entry
+        ) {
+            $totalCents +=
+                $this
+                    ->moneyToCents(
+                        $entry['detail'][
+                            'estimated_amount'
+                        ]
+                    );
+        }
+
+        return $totalCents;
+    }
+
+    /**
+     * Preserve the old ppmp_items.project_type column while the
+     * application transitions to ppmp_item_details.
+     *
+     * New forms may contain several project types. For the legacy
+     * column, keep a compact distinct summary only.
+     *
+     * @param array<string, mixed> $itemData
+     */
+    private function legacyProjectType(
+        array $itemData
+    ): string {
+        if (
+            filled(
+                $itemData[
+                    'project_type'
+                ] ?? null
+            )
+        ) {
+            return (string)
+                $itemData[
+                    'project_type'
+                ];
+        }
+
+        $types = collect(
+            $itemData[
+                'details'
+            ] ?? []
+        )
+            ->filter(
+                fn ($detail) =>
+                    is_array($detail)
+                    && filled(
+                        $detail[
+                            'project_type'
+                        ] ?? null
+                    )
+            )
+            ->pluck(
+                'project_type'
+            )
+            ->map(
+                fn ($value) =>
+                    trim(
+                        (string) $value
+                    )
+            )
+            ->filter()
+            ->unique()
+            ->values()
+            ->implode(' / ');
+
+        return Str::limit(
+            $types,
+            100,
+            ''
+        );
+    }
+
+    /**
+     * Preserve the old free-text quantity_size column as a readable
+     * compatibility summary. The structured detail rows remain the
+     * authoritative data source.
+     *
+     * @param array<string, mixed> $itemData
+     */
+    private function legacyQuantitySize(
+        array $itemData
+    ): string {
+        if (
+            filled(
+                $itemData[
+                    'quantity_size'
+                ] ?? null
+            )
+        ) {
+            return (string)
+                $itemData[
+                    'quantity_size'
+                ];
+        }
+
+        $lines = [];
+
+        foreach (
+            ($itemData[
+                'details'
+            ] ?? [])
+            as $detail
+        ) {
+            if (
+                ! is_array($detail)
+                || ! $this
+                    ->detailHasContent(
+                        $detail
+                    )
+            ) {
+                continue;
+            }
+
+            $main = trim(
+                implode(
+                    ' ',
+                    array_filter(
+                        [
+                            isset(
+                                $detail[
+                                    'quantity'
+                                ]
+                            )
+                                && $detail[
+                                    'quantity'
+                                ] !== ''
+                                ? (string)
+                                    $detail[
+                                        'quantity'
+                                    ]
+                                : null,
+
+                            filled(
+                                $detail[
+                                    'unit'
+                                ] ?? null
+                            )
+                                ? trim(
+                                    (string)
+                                    $detail[
+                                        'unit'
+                                    ]
+                                )
+                                : null,
+
+                            filled(
+                                $detail[
+                                    'item_description'
+                                ] ?? null
+                            )
+                                ? trim(
+                                    (string)
+                                    $detail[
+                                        'item_description'
+                                    ]
+                                )
+                                : null,
+                        ],
+                        fn ($value) =>
+                            $value !== null
+                            && $value !== ''
+                    )
+                )
+            );
+
+            $specification =
+                filled(
+                    $detail[
+                        'size_specification'
+                    ] ?? null
+                )
+                    ? trim(
+                        (string)
+                        $detail[
+                            'size_specification'
+                        ]
+                    )
+                    : '';
+
+            if (
+                $main !== ''
+                && $specification !== ''
+            ) {
+                $lines[] =
+                    $main
+                    .' - '
+                    .$specification;
+            } elseif (
+                $main !== ''
+            ) {
+                $lines[] =
+                    $main;
+            } elseif (
+                $specification !== ''
+            ) {
+                $lines[] =
+                    $specification;
+            }
+        }
+
+        return Str::limit(
+            implode(
+                "\n",
+                $lines
+            ),
+            1000,
+            ''
+        );
+    }
+
+    /**
+     * Synchronize the repeatable Item No. 2 + Item No. 3 rows for
+     * one PPMP procurement item.
+     *
+     * When details[] is absent during update, existing detail rows
+     * are preserved. This keeps the application backward compatible
+     * until edit.tsx has also been migrated to the new payload.
+     *
+     * @param array<string, mixed> $itemData
+     */
+    private function syncItemDetails(
+        PpmpItem $item,
+        array $itemData,
+        bool $preserveWhenMissing
+    ): void {
+        if (
+            ! array_key_exists(
+                'details',
+                $itemData
+            )
+        ) {
+            if (
+                $preserveWhenMissing
+            ) {
+                return;
+            }
+
+            /*
+             * Legacy create payload fallback.
+             *
+             * Create one structured child row from the old fields so
+             * every newly-created PPMP item can still obtain a detail ID.
+             */
+            $legacyDetail = [
+                'project_type' =>
+                    $itemData[
+                        'project_type'
+                    ] ?? null,
+
+                'quantity' =>
+                    null,
+
+                'unit' =>
+                    null,
+
+                'item_description' =>
+                    $itemData[
+                        'description_objective'
+                    ] ?? null,
+
+                'size_specification' =>
+                    $itemData[
+                        'quantity_size'
+                    ] ?? null,
+
+                'estimated_amount' =>
+                    null,
+            ];
+
+            if (
+                $this
+                    ->detailHasContent(
+                        $legacyDetail
+                    )
+            ) {
+                $item
+                    ->details()
+                    ->create([
+                        ...$legacyDetail,
+
+                        'sort_order' =>
+                            1,
+                    ]);
+            }
+
+            return;
+        }
+
+        $savedDetailIds = [];
+
+        foreach (
+            ($itemData[
+                'details'
+            ] ?? [])
+            as $detailIndex =>
+                $detailData
+        ) {
+            if (
+                ! is_array(
+                    $detailData
+                )
+                || ! $this
+                    ->detailHasContent(
+                        $detailData
+                    )
+            ) {
+                continue;
+            }
+
+            $detail = null;
+
+            if (
+                ! empty(
+                    $detailData[
+                        'id'
+                    ] ?? null
+                )
+            ) {
+                $detail =
+                    $item
+                        ->details()
+                        ->findOrFail(
+                            $detailData[
+                                'id'
+                            ]
+                        );
+            }
+
+            $values = [
+                'project_type' =>
+                    filled(
+                        $detailData[
+                            'project_type'
+                        ] ?? null
+                    )
+                        ? trim(
+                            (string)
+                            $detailData[
+                                'project_type'
+                            ]
+                        )
+                        : null,
+
+                'quantity' =>
+                    isset(
+                        $detailData[
+                            'quantity'
+                        ]
+                    )
+                    && $detailData[
+                        'quantity'
+                    ] !== ''
+                        ? $detailData[
+                            'quantity'
+                        ]
+                        : null,
+
+                'unit' =>
+                    filled(
+                        $detailData[
+                            'unit'
+                        ] ?? null
+                    )
+                        ? trim(
+                            (string)
+                            $detailData[
+                                'unit'
+                            ]
+                        )
+                        : null,
+
+                'item_description' =>
+                    filled(
+                        $detailData[
+                            'item_description'
+                        ] ?? null
+                    )
+                        ? trim(
+                            (string)
+                            $detailData[
+                                'item_description'
+                            ]
+                        )
+                        : null,
+
+                'size_specification' =>
+                    filled(
+                        $detailData[
+                            'size_specification'
+                        ] ?? null
+                    )
+                        ? trim(
+                            (string)
+                            $detailData[
+                                'size_specification'
+                            ]
+                        )
+                        : null,
+
+                'estimated_amount' =>
+                    isset(
+                        $detailData[
+                            'estimated_amount'
+                        ]
+                    )
+                    && $detailData[
+                        'estimated_amount'
+                    ] !== ''
+                        ? $this
+                            ->centsToMoney(
+                                $this
+                                    ->moneyToCents(
+                                        $detailData[
+                                            'estimated_amount'
+                                        ]
+                                    )
+                            )
+                        : null,
+
+                'sort_order' =>
+                    $detailIndex + 1,
+            ];
+
+            if ($detail) {
+                $detail->update(
+                    $values
+                );
+            } else {
+                $detail =
+                    $item
+                        ->details()
+                        ->create(
+                            $values
+                        );
+            }
+
+            $savedDetailIds[] =
+                $detail->id;
+        }
+
+        /*
+         * A detail omitted from an explicit details[] payload has been
+         * removed by the coordinator. Historical rows on older approved
+         * PPMP versions remain untouched because each version owns its
+         * own detail records.
+         */
+        if (
+            $savedDetailIds === []
+        ) {
+            $item
+                ->details()
+                ->delete();
+        } else {
+            $item
+                ->details()
+                ->whereNotIn(
+                    'id',
+                    $savedDetailIds
+                )
+                ->delete();
+        }
+    }
+
+    /**
+     * Clone structured Item No. 2 + Item No. 3 records into the next
+     * Indicative version while preserving detail lineage.
+     */
+    private function cloneItemDetailsForRevision(
+        PpmpItem $sourceItem,
+        PpmpItem $newItem
+    ): void {
+        if (
+            $sourceItem
+                ->details
+                ->isEmpty()
+        ) {
+            /*
+             * Safety fallback for any legacy item created before the
+             * structured detail migration was fully wired into create.
+             */
+            $legacyDetail = [
+                'project_type' =>
+                    $sourceItem
+                        ->project_type,
+
+                'quantity' =>
+                    null,
+
+                'unit' =>
+                    null,
+
+                'item_description' =>
+                    $sourceItem
+                        ->description_objective,
+
+                'size_specification' =>
+                    $sourceItem
+                        ->quantity_size,
+
+                'estimated_amount' =>
+                    null,
+            ];
+
+            if (
+                $this
+                    ->detailHasContent(
+                        $legacyDetail
+                    )
+            ) {
+                $newItem
+                    ->details()
+                    ->create([
+                        ...$legacyDetail,
+
+                        'sort_order' =>
+                            1,
+                    ]);
+            }
+
+            return;
+        }
+
+        foreach (
+            $sourceItem
+                ->details
+            as $sourceDetail
+        ) {
+            $detailLineageUuid =
+                $sourceDetail
+                    ->lineage_uuid;
+
+            if (
+                blank(
+                    $detailLineageUuid
+                )
+            ) {
+                $detailLineageUuid =
+                    (string)
+                    Str::uuid();
+
+                $sourceDetail
+                    ->forceFill([
+                        'lineage_uuid' =>
+                            $detailLineageUuid,
+                    ])
+                    ->save();
+            }
+
+            $newItem
+                ->details()
+                ->create([
+                    'lineage_uuid' =>
+                        $detailLineageUuid,
+
+                    'source_detail_id' =>
+                        $sourceDetail
+                            ->id,
+
+                    'project_type' =>
+                        $sourceDetail
+                            ->project_type,
+
+                    'quantity' =>
+                        $sourceDetail
+                            ->quantity,
+
+                    'unit' =>
+                        $sourceDetail
+                            ->unit,
+
+                    'item_description' =>
+                        $sourceDetail
+                            ->item_description,
+
+                    'size_specification' =>
+                        $sourceDetail
+                            ->size_specification,
+
+                    'estimated_amount' =>
+                        $sourceDetail
+                            ->estimated_amount,
+
+                    'sort_order' =>
+                        $sourceDetail
+                            ->sort_order,
+                ]);
+        }
     }
 
     public function show(
@@ -930,9 +1738,13 @@ class PpmpController extends Controller
 
             'coordinator:id,name,position_title',
 
+            'items.details',
+
             'items.attachments',
 
-            'attachments',
+            'attachments.uploader:id,name',
+
+            'attachments.item:id,description_objective,sort_order',
 
             'approver:id,name',
 
@@ -1186,6 +1998,56 @@ class PpmpController extends Controller
                                         $item
                                             ->quantity_size,
 
+                                    'details' =>
+                                        $item
+                                            ->details
+                                            ->map(
+                                                fn (
+                                                    $detail
+                                                ) => [
+                                                    'id' =>
+                                                        $detail
+                                                            ->id,
+
+                                                    'lineage_uuid' =>
+                                                        $detail
+                                                            ->lineage_uuid,
+
+                                                    'source_detail_id' =>
+                                                        $detail
+                                                            ->source_detail_id,
+
+                                                    'project_type' =>
+                                                        $detail
+                                                            ->project_type,
+
+                                                    'quantity' =>
+                                                        $detail
+                                                            ->quantity,
+
+                                                    'unit' =>
+                                                        $detail
+                                                            ->unit,
+
+                                                    'item_description' =>
+                                                        $detail
+                                                            ->item_description,
+
+                                                    'size_specification' =>
+                                                        $detail
+                                                            ->size_specification,
+
+                                                    'estimated_amount' =>
+                                                        $detail
+                                                            ->estimated_amount,
+
+                                                    'sort_order' =>
+                                                        $detail
+                                                            ->sort_order,
+                                                ]
+                                            )
+                                            ->values(),
+
                                     'recommended_mode_of_procurement' =>
                                         $item
                                             ->recommended_mode_of_procurement,
@@ -1337,6 +2199,43 @@ class PpmpController extends Controller
                                         ->file_size,
                             ]
                             : null,
+
+                    'attachments' =>
+                        $ppmp
+                            ->attachments
+                            ->map(
+                                fn (
+                                    $att
+                                ) => [
+                                    'id' =>
+                                        $att->id,
+
+                                    'document_type' =>
+                                        $att->document_type,
+
+                                    'original_name' =>
+                                        $att->original_name,
+
+                                    'file_size' =>
+                                        $att->file_size,
+
+                                    'item_id' =>
+                                        $att->ppmp_item_id,
+
+                                    'item_title' =>
+                                        $att->item
+                                            ? ($att->item->sort_order . '. ' . $att->item->description_objective)
+                                            : null,
+
+                                    'uploaded_by' =>
+                                        $att->uploader
+                                            ?->name ?? 'System',
+
+                                    'created_at' =>
+                                        $att->created_at
+                                            ?->format('M d, Y h:i A'),
+                                ]
+                            )->values(),
                 ],
 
                 'can' => [
@@ -1396,6 +2295,16 @@ class PpmpController extends Controller
                         && $ppmp->status
                             === 'approved'
                         && ! $hasLaterIndicative,
+
+                    'cancel' =>
+                        $isCoordinatorOwner
+                        && in_array($ppmp->status, ['draft', 'submitted'], true)
+                        && ($user->can('ppmps.cancel') || $user->hasRole('ppmp-coordinator')),
+
+                    'upload_attachment' =>
+                        $isCoordinatorOwner
+                        && $user->can('ppmps.update-own')
+                        && $ppmp->isEditable(),
                 ],
 
                 'flash' => [
@@ -1426,7 +2335,7 @@ class PpmpController extends Controller
 
             'coordinator:id,name,position_title',
 
-            'items',
+            'items.details',
         ]);
 
         return Inertia::render(
@@ -1482,11 +2391,8 @@ class PpmpController extends Controller
 
             $proposedTotalCents +=
                 $this
-                    ->moneyToCents(
-                        $itemData[
-                            'estimated_budget'
-                        ]
-                        ?? 0
+                    ->resolvedItemBudgetCents(
+                        $itemData
                     );
         }
 
@@ -1634,19 +2540,23 @@ class PpmpController extends Controller
                         continue;
                     }
 
+                    /*
+                     * Never trust a manually supplied Item No. 10
+                     * when complete per-entry amounts exist.
+                     */
                     $amountCents =
                         $this
-                            ->moneyToCents(
-                                $itemData[
-                                    'estimated_budget'
-                                ]
-                                ?? 0
+                            ->resolvedItemBudgetCents(
+                                $itemData
                             );
 
                     $totalCents +=
                         $amountCents;
 
                     $item = null;
+
+                    $wasExistingItem =
+                        false;
 
                     if (
                         ! empty(
@@ -1663,6 +2573,9 @@ class PpmpController extends Controller
                                         'id'
                                     ]
                                 );
+
+                        $wasExistingItem =
+                            true;
                     }
 
                     $values = [
@@ -1673,16 +2586,16 @@ class PpmpController extends Controller
                             ?? '',
 
                         'project_type' =>
-                            $itemData[
-                                'project_type'
-                            ]
-                            ?? '',
+                            $this
+                                ->legacyProjectType(
+                                    $itemData
+                                ),
 
                         'quantity_size' =>
-                            $itemData[
-                                'quantity_size'
-                            ]
-                            ?? '',
+                            $this
+                                ->legacyQuantitySize(
+                                    $itemData
+                                ),
 
                         'recommended_mode_of_procurement' =>
                             $itemData[
@@ -1756,6 +2669,18 @@ class PpmpController extends Controller
                                     $values
                                 );
                     }
+
+                    $this
+                        ->syncItemDetails(
+                            item:
+                                $item,
+
+                            itemData:
+                                $itemData,
+
+                            preserveWhenMissing:
+                                $wasExistingItem
+                        );
 
                     $savedItemIds[] =
                         $item->id;
@@ -1997,6 +2922,7 @@ class PpmpController extends Controller
                     $source =
                         Ppmp::query()
                             ->with([
+                                'items.details',
                                 'items.attachments',
                                 'attachments',
                             ])
@@ -2359,6 +3285,20 @@ class PpmpController extends Controller
                             $sourceItem->id
                         ] =
                             $newItem->id;
+
+                        /*
+                         * Clone the structured linked Item No. 2
+                         * + Item No. 3 rows and preserve their
+                         * logical lineage across revisions.
+                         */
+                        $this
+                            ->cloneItemDetailsForRevision(
+                                sourceItem:
+                                    $sourceItem,
+
+                                newItem:
+                                    $newItem
+                            );
 
                         /*
                         * Clone only supporting documents

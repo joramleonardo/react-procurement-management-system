@@ -80,6 +80,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'ppmps.update-own',
             'ppmps.submit',
             'ppmps.resubmit',
+            'ppmps.cancel',
 
             /*
              |--------------------------------------------------------------------------
@@ -222,6 +223,7 @@ class RolesAndPermissionsSeeder extends Seeder
                 'ppmps.update-own',
                 'ppmps.submit',
                 'ppmps.resubmit',
+                'ppmps.cancel',
 
                 // Purchase Requests
                 'prs.view-own',

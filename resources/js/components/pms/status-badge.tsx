@@ -21,6 +21,9 @@ function statusLabel(
         case 'approved':
             return 'Approved';
 
+        case 'cancelled':
+            return 'Cancelled';
+
         case 'active':
             return 'Active';
 
@@ -92,6 +95,16 @@ function statusStyles(
         /*
          * Restricted / unavailable
          */
+        case 'cancelled':
+            return [
+                'border-rose-300',
+                'bg-rose-50',
+                'text-rose-800',
+                'dark:border-rose-800',
+                'dark:bg-rose-950/45',
+                'dark:text-rose-300',
+            ].join(' ');
+
         case 'inactive':
         case 'locked':
             return [
@@ -133,6 +146,9 @@ function dotStyles(
         case 'returned_for_revision':
         case 'pending':
             return 'bg-amber-500';
+
+        case 'cancelled':
+            return 'bg-rose-500';
 
         case 'inactive':
         case 'locked':
